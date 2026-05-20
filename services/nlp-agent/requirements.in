@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+prometheus-fastapi-instrumentator
+openai
+httpx
+pydantic

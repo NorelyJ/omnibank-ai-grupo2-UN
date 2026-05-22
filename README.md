@@ -1,180 +1,224 @@
 # OmniBank AI — Conversational Agent
 
-PII-protected conversational agent for OmniBank. University project, DevOps & SRE UNAL 2026.
+A Kubernetes-deployed conversational agent that answers OmniBank customers' banking
+questions in Spanish — balances, transactions, product info and FAQs — on behalf of
+authenticated users. University project, DevOps & SRE, UNAL 2026.
+
+**Thesis:** every team can wire an LLM to a banking API; few can prove the data path
+is safe. OmniBank AI's defining constraint is that **customer PII never reaches the
+third-party LLM**. Every user message *and* every backend banking response is passed
+through a dedicated PII-redaction service before any text is sent to OpenAI, and the
+agent **fails safe** — it refuses to call the LLM at all if the filter is unavailable.
 
 - **PRD:** issue [#1](https://github.com/NorelyJ/omnibank-ai-grupo2-UN/issues/1)
-- **Slice 1 (scaffold):** issue [#2](https://github.com/NorelyJ/omnibank-ai-grupo2-UN/issues/2)
-- **Slice 2 (PII filter):** issue [#6](https://github.com/NorelyJ/omnibank-ai-grupo2-UN/issues/6)
+- **Slice plan:** issues [#2 – #13](https://github.com/NorelyJ/omnibank-ai-grupo2-UN/issues)
+
+## Architecture
+
+```mermaid
+flowchart LR
+    user([Customer]) -->|"POST /v1/chat<br/>Bearer JWT"| kong[Kong API Gateway<br/>routing + rate limiting<br/>behind AWS NLB]
+    kong --> agent[nlp-agent<br/>FastAPI orchestrator]
+    cognito[(Amazon Cognito<br/>user pool)] -. JWKS .-> agent
+    agent -->|gRPC Redact| pii[pii-filter<br/>regex + spaCy]
+    agent -->|HTTP| bank[mock-core-banking]
+    agent -->|conversation history| redis[(Redis / ElastiCache)]
+    agent -->|redacted text only| openai[OpenAI gpt-4o-mini]
+```
+
+**Request flow:** client → Kong (DBless, behind an AWS NLB) → nlp-agent. The agent
+validates the Cognito ID token, scrubs the user message through pii-filter (gRPC),
+looks up real data from mock-core-banking (HTTP) via OpenAI function calling, scrubs
+each tool result, persists redacted history in Redis, and returns a Spanish reply.
+**Only redacted text ever reaches OpenAI.**
+
+Ten deep modules: PII detector, redaction policy engine, conversation orchestrator,
+tool dispatcher, LLM client adapter, Redis history client, PII-filter gRPC client,
+customer repository, JWT validator, metrics emitter.
 
 ## Repo layout
 
 ```
 services/
-  nlp-agent/          FastAPI agent — OpenAI function calling, /v1/chat
-  pii-filter/         gRPC PII redactor (Slice 1: stub) + FastAPI sidecar
-  mock-core-banking/  FastAPI mock bank data, hardcoded JSON
+  nlp-agent/          FastAPI agent — OpenAI function calling, in-agent JWT, /v1/chat
+  pii-filter/         gRPC PII redactor (regex + spaCy) + FastAPI sidecar
+  mock-core-banking/  FastAPI mock bank data from baked-in JSON
 infra/
-  terraform/          AWS infrastructure (Slice 4)
-  helm/               Kubernetes Helm charts (Slice 6)
-docker-compose.yml    Local dev stack
-Makefile              dev / test / lint / format
-.env.example          Template — copy to .env, fill in OPENAI_API_KEY
+  terraform/          AWS infrastructure (VPC, EKS, Cognito, ElastiCache, Secrets)
+  helm/               per-service + umbrella Helm charts, kps/kong/fluentbit values
+  kong/               Kong DBless declarative config
+  argocd/             ArgoCD Application manifest
+  kind/               kind cluster config
+  observability/      Grafana dashboard ConfigMap
+docs/                 architecture, demo Q&A, demo artifacts
+.github/workflows/    CI pipeline
+docker-compose.yml    local dev stack       Makefile  all common operations
 ```
 
-Each service has its own `requirements.{in,txt}`, `requirements-dev.txt`, `Dockerfile`, `pyproject.toml`.
-
-## Local development
-
-### Prerequisites
-- Python 3.12
-- Docker + Docker Compose v2
-- An OpenAI API key (gpt-4o-mini access)
-
-### First-time setup
+## Run locally (docker-compose)
 
 ```bash
-cp .env.example .env
-# Edit .env and set OPENAI_API_KEY=sk-...
-
-make install-dev   # per-service venvs + dev deps
+cp .env.example .env          # set OPENAI_API_KEY=sk-...
+make dev                      # docker compose up --build — Redis + all 3 services
 ```
 
-### Daily workflow
+The local stack runs with `SKIP_JWT_VALIDATION=true` and acts as customer
+`CUST-001` (Juan) via `DEV_USER_BANK_CUSTOMER_ID`. The agent **refuses to start**
+(`exit 2`) if `SKIP_JWT_VALIDATION=true` while `ENV=production`.
 
 ```bash
-make dev      # docker compose up --build — full stack with hot-reload
-make test     # pytest in every service
-make lint     # ruff check + ruff format --check
-make format   # auto-format with ruff
-make down     # stop & remove containers
-make help     # show all targets
+make test     # pytest in every service          make lint    # ruff check + format
+make help     # all targets
 ```
 
-### Smoke check
+## The four intents
 
-With the stack running:
+With the local stack running (`http://localhost:8000`):
 
 ```bash
-curl http://localhost:8001/health   # mock-core-banking
-curl http://localhost:8002/health   # pii-filter
-curl http://localhost:8000/health   # nlp-agent
-
-curl -X POST http://localhost:8000/v1/chat \
-  -H 'Content-Type: application/json' \
+# 1 — Balance
+curl -X POST localhost:8000/v1/chat -H 'Content-Type: application/json' \
   -d '{"message": "¿cuál es mi saldo?"}'
+
+# 2 — Transactions
+curl -X POST localhost:8000/v1/chat -H 'Content-Type: application/json' \
+  -d '{"message": "muéstrame mis últimos movimientos"}'
+
+# 3 — Products
+curl -X POST localhost:8000/v1/chat -H 'Content-Type: application/json' \
+  -d '{"message": "¿qué tarjeta de crédito ofrecen?"}'
+
+# 4 — FAQ (answered from prompt knowledge, no tool call)
+curl -X POST localhost:8000/v1/chat -H 'Content-Type: application/json' \
+  -d '{"message": "¿cuál es el horario de atención?"}'
 ```
 
-The chat endpoint is hardcoded in local dev to act as customer `CUST-001` (Juan) via the `DEV_USER_BANK_CUSTOMER_ID` env var. Slice 3 expands this to Juan + María + Carlos.
+PII demo — a cédula is redacted before it reaches the LLM; a card number is blocked
+outright:
 
-### Dev escape hatches
+```bash
+curl -X POST localhost:8000/v1/chat -H 'Content-Type: application/json' \
+  -d '{"message": "mi cédula es 1020304050"}'          # → redacted, warning shown
+curl -X POST localhost:8000/v1/chat -H 'Content-Type: application/json' \
+  -d '{"message": "mi tarjeta es 4532015112830366"}'   # → blocked, no LLM call
+```
 
-Two env vars allow direct curl testing without standing up Cognito/Kong locally:
-- `SKIP_JWT_VALIDATION=true` — skip JWT validation, trust env-var customer ID
-- `DEV_USER_BANK_CUSTOMER_ID=CUST-001` — which customer the request is "logged in as"
+## Run on EKS
 
-**The agent refuses to start (`exit 2`) if `SKIP_JWT_VALIDATION=true` AND `ENV=production`.** This prevents a misconfigured Helm value from silently disabling auth in a deployed environment.
+```bash
+cd infra/terraform && terraform init && terraform apply   # VPC, EKS, Cognito, ElastiCache
+cd ../.. && make deploy-eks      # OpenAI key from Secrets Manager → Helm deploy
+make install-kong                # Kong API gateway (NLB)
+make install-kps                 # kube-prometheus-stack + Grafana dashboard
+make install-logging             # FluentBit → CloudWatch (see LabRole note)
+```
 
-## What's built so far
+### Multi-user demo flow
 
-**Slice 1 — scaffold**
-- Monorepo scaffold, three minimal services, docker-compose, Makefile, tests, lint.
-- One OpenAI function-calling tool (`get_my_accounts`).
-- One hardcoded customer (Juan / `CUST-001`).
+Three Cognito users are pre-provisioned by Terraform — Juan (`CUST-001`),
+María (`CUST-002`), Carlos (`CUST-003`):
 
-**Slice 2 — PII filter**
-- Real hybrid PII detector: regex (cédula, NIT with check digit, Colombian mobile,
-  email, account, Luhn-validated card, IPv4/IPv6) + spaCy `es_core_news_md` NER
-  (person, location, organization).
-- Redaction policy engine: card numbers BLOCK the request; everything else is
-  redacted to `[TIPO]` placeholders; the authenticated user's own first name
-  passes through.
-- nlp-agent scrubs every user message through the filter before the LLM, and
-  fails safe (no LLM call) if the filter is unreachable.
+```bash
+NLB=$(kubectl get svc kong-kong-proxy -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
 
-**Slice 3 — intents + history**
-- Three users (Juan / María / Carlos) with distinct accounts and transactions.
-- Three typed tools: `get_my_accounts`, `list_my_transactions`, `get_product_info`.
-- Redis conversation history (24h TTL, PII-redacted, best-effort).
+TOKEN=$(make get-token USER=juan)
+curl -X POST https://$NLB/v1/chat -H "Authorization: Bearer $TOKEN" \
+  -d '{"message": "¿cuál es mi saldo?"}'      # → Juan's balance
 
-Still stubbed: JWT validation (Slice 7).
+TOKEN=$(make get-token USER=maria)
+curl -X POST https://$NLB/v1/chat -H "Authorization: Bearer $TOKEN" \
+  -d '{"message": "¿cuál es mi saldo?"}'      # → María's (different) balance
+```
 
-See issues [#2 — #13](https://github.com/NorelyJ/omnibank-ai-grupo2-UN/issues) for the full slice plan.
+Asking without a token, or with a token signed by another key, returns `401`.
 
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every pull request and on pushes to `main`:
+**lint** (`ruff`), **test** (`pytest` per service), **build-and-push** (multi-stage
+Docker images to `ghcr.io/<owner>/omnibank-<service>`, git-SHA tagged, `:latest` on
+`main`; PRs build but do not push).
 
-1. **lint** — `ruff check` + `ruff format --check` on all three services.
-2. **test** — `pytest` per service (matrix), spaCy model installed for pii-filter.
-3. **build-and-push** — multi-stage Docker build per service. Images are pushed to
-   the **GitHub Container Registry** (`ghcr.io/<owner>/omnibank-<service>`) tagged
-   with the git short SHA, plus `:latest` on `main`. Pull requests build the images
-   to prove the Dockerfiles work but do **not** push.
+## Observability
 
-### Why ghcr.io instead of ECR
+Every service exposes Prometheus metrics on `/metrics` — default HTTP metrics plus
+custom counters (`omnibank_pii_redactions_total`, `omnibank_llm_cost_usd_total`,
+`omnibank_tool_calls_total`, …). **No metric label ever carries a customer ID.**
+`make install-kps` installs kube-prometheus-stack and the curated six-panel
+"OmniBank Chat Overview" Grafana dashboard (`infra/observability/`). Container logs
+ship to CloudWatch via a FluentBit DaemonSet (`make install-logging`).
 
-ECR is the natural registry on AWS, and it remains fully declared in
-`infra/terraform/ecr.tf` for reference. It is **not** used as the live registry:
-AWS Academy's `LabRole` cannot create the IAM OIDC provider that GitHub Actions
-needs to obtain short-lived ECR push credentials, and the rotating 4-hour Academy
-session keys cannot be safely stored as long-lived CI secrets. `ghcr.io`
-authenticates with the workflow's built-in `GITHUB_TOKEN` — no AWS credentials, no
-OIDC provider — so it is the registry CI actually publishes to.
+## Cost discipline
+
+The project runs under an AWS Academy **$100 credit cap**. Makefile targets enforce
+a stop/destroy cadence:
+
+| Target | When | Effect |
+|---|---|---|
+| `make stop-night` | Weeknights (~8pm) | EKS nodes → 0, ElastiCache destroyed |
+| `make start-day`  | Next morning | Nodes → 2, ElastiCache recreated |
+| `make destroy-all`| Weekends | Full `terraform destroy` (typed confirmation) |
+| `make budget-check` | Daily | Month-to-date spend vs the $100 cap |
+
+Set an 8pm weeknight team reminder. Expected envelope: ~$110–125 of raw resource
+time compressed by the cadence to **under $90**.
 
 ## API gateway and authentication
 
-Requests reach the agent through **Kong** (DBless, behind an AWS NLB). Kong owns
-**routing** and **rate limiting** — `30 req/min` per client IP on `/v1/chat` — the
-things OSS Kong does well in declarative config (`infra/kong/kong-declarative.yaml`).
+Kong (DBless, behind an NLB) owns **routing + rate limiting** (`30 req/min` per IP
+on `/v1/chat`). **JWT validation is done in the agent** — wiring OSS Kong's `jwt`
+plugin to Cognito needs Cognito's *rotating* RSA keys templated into a static
+DBless file, and OSS `request-transformer` cannot forward JWT claims as headers.
+`app/auth.py` (`python-jose`) fetches and caches Cognito's JWKS, verifies
+signature/expiry/audience, and reads the custom claims directly — handling key
+rotation automatically. It is unit-tested offline (`tests/test_auth.py`). The agent
+also accepts a Kong-injected `X-Bank-Customer-Id` header, so a future gateway-side
+validation can be slotted in without code changes.
 
-**JWT validation is done in the agent, not in Kong.** This is the HITL decision
-called out in the PRD's risk register, and the reasoning:
+## Locked architectural compromises
 
-- Wiring Kong's OSS `jwt` plugin to Cognito means templating Cognito's **rotating**
-  RSA public keys into Kong's declarative config — Cognito publishes its keys at a
-  JWKS URL and rotates them, which a static DBless file cannot track.
-- OSS Kong's `request-transformer` **cannot read JWT claims**, so it cannot forward
-  `custom:bank_customer_id` / `sub` / `given_name` to the upstream as headers
-  (that needs a custom plugin or Kong Enterprise).
+Every compromise below is forced by AWS Academy constraints ($100 cap, rotating
+4-hour credentials, `LabRole`-only IAM, `us-east-1`):
 
-The agent therefore validates the Cognito **ID token** itself (`app/auth.py`,
-`python-jose`): it fetches Cognito's JWKS, caches it for an hour, verifies the
-signature, expiry and audience, and reads the custom claims directly. This handles
-key rotation automatically and is unit-tested offline (`tests/test_auth.py`). The
-agent still accepts a Kong-injected `X-Bank-Customer-Id` header if a future
-gateway-side validation is added — both paths are supported.
+1. **Bedrock → OpenAI.** AWS Academy does not support Bedrock, so the LLM is
+   OpenAI `gpt-4o-mini` (with a $20 hard cap on the API key).
+2. **ECR → GitHub Container Registry.** `LabRole` cannot create the IAM OIDC
+   provider GitHub Actions needs to push to ECR; ECR stays declared in Terraform
+   for reference. CI publishes to `ghcr.io` with the built-in `GITHUB_TOKEN`.
+3. **Cognito ID token, not access token.** `LabRole` cannot provision the
+   Pre-Token Generation Lambda needed to put `custom:bank_customer_id` on the
+   access token, so the agent reads it from the **ID token**.
+4. **Manual secret sync.** No IRSA on AWS Academy, so `make deploy-eks` fetches
+   the OpenAI key from Secrets Manager and creates a Kubernetes Secret itself.
+5. **No TLS / no AUTH on ElastiCache Redis.** The TLS-capable replication group is
+   harder to provision under `LabRole`; the plain cache cluster is used. Redis only
+   ever holds PII-redacted text, and is reachable only inside the VPC.
+6. **NetworkPolicies declared, enforcement depends on the CNI.** The zero-trust
+   policies are always declared in Helm; enforcement requires a policy-capable CNI
+   (Calico is installed in kind — `make kind-up`).
+7. **ArgoCD on the demo cluster only.** The ~20-minute install is not justified on
+   clusters destroyed nightly, so ArgoCD reconciles the week-3 demo cluster only;
+   daily deploys use `make deploy-eks`.
 
-> ID token (not access token): AWS Academy's `LabRole` cannot provision the
-> Pre-Token Generation Lambda needed to put custom attributes on the access token,
-> so the agent reads `custom:bank_customer_id` from the **ID token**.
+One further deliberate decision: the authenticated user's **own first name** is the
+single piece of personal data deliberately passed to OpenAI, for a personalized
+greeting — it is documented and controlled, every other identifier is redacted.
 
-## Logging
+## Production gaps
 
-Container logs ship to a single CloudWatch Logs group, `/aws/eks/omnibank`, via an
-**AWS for Fluent Bit** DaemonSet (`make install-logging`,
-`infra/helm/fluentbit-values.yaml`) — one log stream per pod, so logs survive pod
-restarts and the nightly cluster destroy. The DaemonSet writes to CloudWatch using
-the node IAM role (AWS Academy's `LabRole`).
+What would change before this went to real production:
 
-> **LabRole fallback:** if `LabRole` lacks `logs:PutLogEvents` (test this on day
-> one with `aws logs put-log-events`), skip `make install-logging` and rely on
-> `kubectl logs` / the Grafana/Prometheus stack for the demo. The DaemonSet is
-> additive observability, not a hard dependency of the chat path.
+- A real core-banking integration (not JSON baked into an image).
+- TLS + AUTH on Redis; IRSA / External Secrets instead of manual secret sync.
+- Distributed tracing (Jaeger/Tempo) and a service mesh with mTLS.
+- A post-LLM PII scan (currently only pre-LLM input and tool results are scanned).
+- AlertManager + on-call paging; streaming (SSE) chat responses.
+- Automated CD to EKS (blocked here by rotating AWS Academy credentials).
+- Multi-region / multi-AZ resilience; HPA validated under a real load test.
+- A managed WAF and per-route auth at the gateway.
 
-## GitOps (demo cluster)
+## Demo
 
-The week-3 demo cluster is reconciled by **ArgoCD** (`make install-argocd`,
-demo-only — not part of the daily deploy flow). A single Application,
-`infra/argocd/omnibank-application.yaml`, points at the umbrella chart on `main`
-with `prune` + `selfHeal` auto-sync. Image-tag changes are made by editing
-`values-prod.yaml` in git — there is no Image Updater.
-
-ArgoCD installs HA-disabled (single replica per component), no persistence; the UI
-is reached with `kubectl -n argocd port-forward svc/argocd-server 8080:80` — no
-Ingress, no TLS.
-
-> The Application targets this repository on `main`. If the repo is private, add
-> repo credentials to ArgoCD first (`argocd repo add … --username … --password
-> <token>`, or a `repository` Secret) — otherwise the Application stays
-> `Unknown` with "authentication required". Kong and kube-prometheus-stack are
-> separate Helm releases, not part of the umbrella chart.
+See `docs/demo/` for demo-day artifacts and `docs/qa.md` for the rehearsed answers
+to adversarial questions ("what if Redis dies mid-chat?", "where is my cédula
+actually stored?", …).

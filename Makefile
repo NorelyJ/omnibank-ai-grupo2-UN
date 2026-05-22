@@ -6,7 +6,7 @@ KIND_CLUSTER := omnibank
 COMPOSE_PROJECT := omnibank-ai-grupo2-un
 
 .PHONY: help dev down logs test lint format install-dev \
-        helm-lint kind-up kind-load kind-down deploy-local
+        helm-lint kind-up kind-load kind-down deploy-local install-kps
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -75,3 +75,21 @@ deploy-local: kind-load ## Deploy the umbrella chart to the kind cluster
 	helm upgrade --install omnibank $(HELM_DIR)/omnibank \
 		-f $(HELM_DIR)/omnibank/values-dev.yaml --wait --timeout 120s
 	@echo "omnibank deployed — port-forward with: kubectl port-forward svc/nlp-agent 8000:8000"
+
+install-kps: ## Install kube-prometheus-stack + the OmniBank Grafana dashboard
+	kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+	helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+	helm repo update prometheus-community
+	# Apply the operator CRDs server-side, adopting the ServiceMonitor CRD that
+	# kind-up already installed; then install the chart with --skip-crds.
+	helm show crds prometheus-community/kube-prometheus-stack \
+		| kubectl apply --server-side --force-conflicts -f -
+	@GRAFANA_PW=$$(aws secretsmanager get-secret-value --secret-id omnibank/grafana-admin \
+		--query SecretString --output text 2>/dev/null || echo "omnibank-admin"); \
+	helm upgrade --install kps prometheus-community/kube-prometheus-stack \
+		--namespace monitoring -f $(HELM_DIR)/kps-values.yaml \
+		--set grafana.adminPassword=$$GRAFANA_PW \
+		--skip-crds --wait --timeout 600s
+	kubectl apply -f infra/observability/grafana-dashboard.yaml
+	@echo "kube-prometheus-stack installed."
+	@echo "Grafana: kubectl -n monitoring port-forward svc/kps-grafana 3000:80"

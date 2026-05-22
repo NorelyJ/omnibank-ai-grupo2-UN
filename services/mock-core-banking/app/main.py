@@ -6,10 +6,13 @@ always comes from the `X-Bank-Customer-Id` header — never from the URL path.
 
 import json
 import os
+import time
 from pathlib import Path
 
-from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query, Request
 from prometheus_fastapi_instrumentator import Instrumentator
+
+from app import metrics
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 CUSTOMERS: dict = json.loads((DATA_DIR / "customers.json").read_text(encoding="utf-8"))
@@ -21,6 +24,17 @@ MAX_TXN_LIMIT = 20
 
 app = FastAPI(title="omnibank-mock-core-banking", version=GIT_SHA)
 Instrumentator().instrument(app).expose(app, endpoint="/metrics")
+
+
+@app.middleware("http")
+async def _record_metrics(request: Request, call_next):
+    start = time.perf_counter()
+    response = await call_next(request)
+    metrics.banking_duration_seconds.observe(time.perf_counter() - start)
+    metrics.banking_requests_total.labels(
+        endpoint=request.url.path, status=str(response.status_code)
+    ).inc()
+    return response
 
 
 @app.get("/health")

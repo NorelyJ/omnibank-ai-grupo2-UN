@@ -11,11 +11,21 @@ spec:
       app: {{ .Chart.Name }}
   policyTypes: [Ingress, Egress]
   ingress:
-    # Only Kong may reach the agent.
+    # The service's own restricted upstream (Kong for the agent, nlp-agent for the
+    # backend services).
     - from:
         - podSelector:
             matchLabels:
               {{- toYaml .Values.networkPolicy.ingressFromLabel | nindent 14 }}
+      ports:
+        {{- range .Values.service.ports }}
+        - port: {{ .targetPort }}
+        {{- end }}
+    # Prometheus scraping /metrics from the monitoring namespace.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
       ports:
         {{- range .Values.service.ports }}
         - port: {{ .targetPort }}

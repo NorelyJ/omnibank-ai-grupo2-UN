@@ -13,6 +13,7 @@ import os
 import httpx
 from openai import AsyncOpenAI
 
+from app import metrics
 from app.banking_client import get_accounts, get_transactions, list_products
 from app.history import append as history_append
 from app.history import load as history_load
@@ -114,21 +115,27 @@ def system_prompt(given_name: str) -> str:
 
 async def _invoke_tool(name: str, args: dict, customer_id: str) -> str:
     """Dispatch one tool call to mock-core-banking. Banking errors become a result."""
+    status = "success"
     try:
         if name == "get_my_accounts":
-            return json.dumps(await get_accounts(customer_id))
-        if name == "list_my_transactions":
+            result = json.dumps(await get_accounts(customer_id))
+        elif name == "list_my_transactions":
             limit = args.get("limit") or 5
-            return json.dumps(await get_transactions(customer_id, args.get("account_id"), limit))
-        if name == "get_product_info":
+            result = json.dumps(await get_transactions(customer_id, args.get("account_id"), limit))
+        elif name == "get_product_info":
             catalog = await list_products()
             product_type = args.get("product_type")
             info = next((p for p in catalog["products"] if p["product_type"] == product_type), None)
-            return json.dumps(info or {"error": f"producto desconocido: {product_type}"})
-        return json.dumps({"error": f"herramienta desconocida: {name}"})
+            result = json.dumps(info or {"error": f"producto desconocido: {product_type}"})
+        else:
+            result = json.dumps({"error": f"herramienta desconocida: {name}"})
+            status = "error"
     except httpx.HTTPError as exc:
         logger.warning("banking call failed for tool %s: %s", name, exc)
-        return json.dumps({"error": "banking_unavailable"})
+        result = json.dumps({"error": "banking_unavailable"})
+        status = "error"
+    metrics.tool_calls_total.labels(tool_name=name, status=status).inc()
+    return result
 
 
 async def _redact_tool_result(raw_result: str, given_name: str) -> str:
@@ -142,6 +149,7 @@ async def chat(user_message: str, customer_id: str, given_name: str) -> str:
 
     Card numbers and an unreachable filter both short-circuit before any LLM call.
     """
+    metrics.chat_requests_total.inc()
     try:
         filtered = await pii_redact(user_message, source="user_input", given_name=given_name)
     except PiiFilterUnavailable:
@@ -151,6 +159,7 @@ async def chat(user_message: str, customer_id: str, given_name: str) -> str:
         return filtered.warning
 
     history = await history_load(customer_id)
+    metrics.redis_history_size.observe(len(history))
     try:
         reply = await _run_agent_loop(filtered.text, history, customer_id, given_name)
     except PiiFilterUnavailable:
@@ -170,11 +179,17 @@ async def _run_agent_loop(
     messages.append({"role": "user", "content": user_message})
 
     for _ in range(MAX_ITERATIONS):
-        response = await client().chat.completions.create(
-            model=MODEL,
-            messages=messages,
-            tools=TOOLS,
-        )
+        try:
+            response = await client().chat.completions.create(
+                model=MODEL,
+                messages=messages,
+                tools=TOOLS,
+            )
+        except Exception:
+            metrics.llm_calls_total.labels(model=MODEL, status="error").inc()
+            raise
+        metrics.llm_calls_total.labels(model=MODEL, status="success").inc()
+        metrics.record_llm_usage(response.usage)
         msg = response.choices[0].message
         if not msg.tool_calls:
             return msg.content or ""

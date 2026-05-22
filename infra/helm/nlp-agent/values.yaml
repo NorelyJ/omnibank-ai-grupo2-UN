@@ -1,0 +1,49 @@
+image:
+  repository: ghcr.io/norelyj/omnibank-nlp-agent
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+service:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Non-secret env, injected via ConfigMap. GIT_SHA is added from the image tag.
+config:
+  ENV: production
+  OPENAI_MODEL: gpt-4o-mini
+  MOCK_BANKING_URL: http://mock-core-banking:8001
+  PII_FILTER_GRPC: pii-filter:50051
+  REDIS_URL: redis://redis:6379
+
+# OPENAI_API_KEY is read from this Secret (created by `make deploy-eks`).
+secret:
+  name: omnibank-secrets
+  openaiKey: OPENAI_API_KEY
+
+hpa:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 60
+
+networkPolicy:
+  enabled: true
+  # nlp-agent accepts ingress only from Kong pods.
+  ingressFromLabel:
+    app: kong
+
+serviceMonitor:
+  enabled: true

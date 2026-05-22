@@ -1,0 +1,16 @@
+apiVersion: v2
+name: omnibank
+description: OmniBank AI — umbrella chart deploying the full conversational-agent stack
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+dependencies:
+  - name: nlp-agent
+    version: "0.1.0"
+    repository: "file://../nlp-agent"
+  - name: pii-filter
+    version: "0.1.0"
+    repository: "file://../pii-filter"
+  - name: mock-core-banking
+    version: "0.1.0"
+    repository: "file://../mock-core-banking"

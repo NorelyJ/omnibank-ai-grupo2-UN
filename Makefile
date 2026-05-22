@@ -1,7 +1,12 @@
 SHELL := /bin/bash
 SERVICES := nlp-agent pii-filter mock-core-banking
 
-.PHONY: help dev down logs test lint format install-dev
+HELM_DIR     := infra/helm
+KIND_CLUSTER := omnibank
+COMPOSE_PROJECT := omnibank-ai-grupo2-un
+
+.PHONY: help dev down logs test lint format install-dev \
+        helm-lint kind-up kind-load kind-down deploy-local
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -37,3 +42,36 @@ format: ## Auto-format every service with ruff
 	@for svc in $(SERVICES); do \
 		(cd services/$$svc && .venv/bin/ruff format .); \
 	done
+
+# --- Helm / kind --------------------------------------------------------------
+
+helm-lint: ## helm lint all four charts
+	@set -e; for c in nlp-agent pii-filter mock-core-banking omnibank; do \
+		echo "→ helm lint $$c"; \
+		helm lint $(HELM_DIR)/$$c; \
+	done
+
+kind-up: ## Create the kind cluster with Calico, metrics-server and the ServiceMonitor CRD
+	kind create cluster --name $(KIND_CLUSTER) --config infra/kind/kind-config.yaml
+	kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.28.2/manifests/calico.yaml
+	kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+	kubectl -n kube-system patch deployment metrics-server --type=json \
+		-p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+	kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.76.0/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml
+	@echo "kind cluster '$(KIND_CLUSTER)' ready."
+
+kind-load: ## Build the service images and load them into the kind cluster
+	docker compose build
+	@for svc in $(SERVICES); do \
+		docker tag $(COMPOSE_PROJECT)-$$svc omnibank-$$svc:dev; \
+		kind load docker-image omnibank-$$svc:dev --name $(KIND_CLUSTER); \
+	done
+
+kind-down: ## Delete the kind cluster
+	kind delete cluster --name $(KIND_CLUSTER)
+
+deploy-local: kind-load ## Deploy the umbrella chart to the kind cluster
+	helm dependency update $(HELM_DIR)/omnibank
+	helm upgrade --install omnibank $(HELM_DIR)/omnibank \
+		-f $(HELM_DIR)/omnibank/values-dev.yaml --wait --timeout 120s
+	@echo "omnibank deployed — port-forward with: kubectl port-forward svc/nlp-agent 8000:8000"

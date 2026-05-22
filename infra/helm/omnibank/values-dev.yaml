@@ -1,0 +1,23 @@
+# Local kind cluster. Images are built locally and loaded with `kind load`,
+# so they are never pulled from a registry.
+global:
+  imageTag: dev
+
+nlp-agent:
+  image:
+    repository: omnibank-nlp-agent
+    pullPolicy: Never
+  replicaCount: 2
+
+pii-filter:
+  image:
+    repository: omnibank-pii-filter
+    pullPolicy: Never
+
+mock-core-banking:
+  image:
+    repository: omnibank-mock-core-banking
+    pullPolicy: Never
+
+redis:
+  enabled: true

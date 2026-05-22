@@ -223,3 +223,7 @@ __marimo__/
 *.tfstate.*
 *.tfplan
 crash.log
+
+# Helm
+infra/helm/*/charts/
+infra/helm/*/Chart.lock

@@ -1,0 +1,14 @@
+{{- $g := .Values.global | default dict }}
+{{- $tag := $g.imageTag | default .Values.image.tag }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Chart.Name }}-config
+  labels:
+    app: {{ .Chart.Name }}
+data:
+  # /version reflects the image tag this pod was deployed with.
+  GIT_SHA: {{ $tag | quote }}
+  {{- range $key, $value := .Values.config }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}

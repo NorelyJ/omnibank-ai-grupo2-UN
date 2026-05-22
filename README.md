@@ -160,3 +160,21 @@ the node IAM role (AWS Academy's `LabRole`).
 > one with `aws logs put-log-events`), skip `make install-logging` and rely on
 > `kubectl logs` / the Grafana/Prometheus stack for the demo. The DaemonSet is
 > additive observability, not a hard dependency of the chat path.
+
+## GitOps (demo cluster)
+
+The week-3 demo cluster is reconciled by **ArgoCD** (`make install-argocd`,
+demo-only — not part of the daily deploy flow). A single Application,
+`infra/argocd/omnibank-application.yaml`, points at the umbrella chart on `main`
+with `prune` + `selfHeal` auto-sync. Image-tag changes are made by editing
+`values-prod.yaml` in git — there is no Image Updater.
+
+ArgoCD installs HA-disabled (single replica per component), no persistence; the UI
+is reached with `kubectl -n argocd port-forward svc/argocd-server 8080:80` — no
+Ingress, no TLS.
+
+> The Application targets this repository on `main`. If the repo is private, add
+> repo credentials to ArgoCD first (`argocd repo add … --username … --password
+> <token>`, or a `repository` Secret) — otherwise the Application stays
+> `Unknown` with "authentication required". Kong and kube-prometheus-stack are
+> separate Helm releases, not part of the umbrella chart.

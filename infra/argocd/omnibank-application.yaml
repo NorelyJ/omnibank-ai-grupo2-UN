@@ -1,0 +1,26 @@
+# ArgoCD Application — reconciles the OmniBank umbrella chart from main.
+# Applied by `make install-argocd`. Image-tag changes are made by editing
+# values-prod.yaml in git; auto-sync picks them up (no Image Updater).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: omnibank
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/NorelyJ/omnibank-ai-grupo2-UN.git
+    path: infra/helm/omnibank
+    targetRevision: main
+    helm:
+      valueFiles:
+        - values-prod.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: omnibank
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

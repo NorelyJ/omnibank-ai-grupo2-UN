@@ -1,0 +1,28 @@
+# Values for the argo/argo-cd Helm chart — demo-cluster install only.
+# HA disabled (single replica per component), no persistence, server runs
+# insecure so `kubectl port-forward` reaches the UI without TLS.
+
+redis-ha:
+  enabled: false
+
+controller:
+  replicas: 1
+
+repoServer:
+  replicas: 1
+
+server:
+  replicas: 1
+  extraArgs:
+    - --insecure
+
+applicationSet:
+  replicas: 1
+
+dex:
+  enabled: false
+
+# Default polling interval (~3 min) re-syncs the umbrella chart from git.
+configs:
+  cm:
+    timeout.reconciliation: 180s

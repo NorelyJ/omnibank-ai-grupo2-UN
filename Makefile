@@ -7,7 +7,7 @@ COMPOSE_PROJECT := omnibank-ai-grupo2-un
 
 .PHONY: help dev down logs test lint format install-dev \
         helm-lint kind-up kind-load kind-down deploy-local install-kps \
-        install-kong deploy-eks get-token install-logging
+        install-kong deploy-eks get-token install-logging install-argocd
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -144,3 +144,13 @@ install-logging: ## Install the FluentBit DaemonSet shipping container logs to C
 	helm upgrade --install aws-for-fluent-bit eks/aws-for-fluent-bit \
 		--namespace kube-system -f $(HELM_DIR)/fluentbit-values.yaml --wait --timeout 300s
 	@echo "FluentBit installed — logs shipping to CloudWatch group /aws/eks/omnibank"
+
+install-argocd: ## Install ArgoCD and the omnibank Application (demo cluster, week 3)
+	kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+	helm repo add argo https://argoproj.github.io/argo-helm
+	helm repo update argo
+	helm upgrade --install argocd argo/argo-cd --namespace argocd \
+		-f $(HELM_DIR)/argocd-values.yaml --wait --timeout 300s
+	kubectl apply -f infra/argocd/omnibank-application.yaml
+	@echo "ArgoCD installed. UI: kubectl -n argocd port-forward svc/argocd-server 8080:80"
+	@echo "Admin password: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d"

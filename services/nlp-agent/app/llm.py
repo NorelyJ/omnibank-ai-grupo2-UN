@@ -1,7 +1,7 @@
-"""OpenAI client + agent loop for Slice 1.
+"""OpenAI client + agent loop.
 
-One tool: get_my_accounts. Loop bounded to MAX_ITERATIONS (defense against runaway
-tool-call cycles per the PRD design).
+Every user message is scrubbed by the pii-filter before it reaches the LLM. The
+loop is bounded to MAX_ITERATIONS (defense against runaway tool-call cycles).
 """
 
 import datetime as dt
@@ -11,9 +11,17 @@ import os
 from openai import AsyncOpenAI
 
 from app.banking_client import get_accounts
+from app.pii_client import PiiFilterUnavailable
+from app.pii_client import redact as pii_redact
 
 MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 MAX_ITERATIONS = 3
+
+# Shown when the PII filter is unreachable — the agent fails safe and never calls
+# the LLM with un-scrubbed text.
+FILTER_UNAVAILABLE_MSG = (
+    "El asistente no está disponible temporalmente. " "Por favor intenta de nuevo en unos minutos."
+)
 
 _client: AsyncOpenAI | None = None
 
@@ -62,6 +70,25 @@ async def _invoke_tool(name: str, customer_id: str) -> str:
 
 
 async def chat(user_message: str, customer_id: str, given_name: str) -> str:
+    """Handle one chat turn: scrub PII, run the agent loop, return the reply.
+
+    Card numbers and an unreachable filter both short-circuit before any LLM call.
+    """
+    try:
+        filtered = await pii_redact(user_message, source="user_input", given_name=given_name)
+    except PiiFilterUnavailable:
+        return FILTER_UNAVAILABLE_MSG
+
+    if filtered.decision == "BLOCK":
+        return filtered.warning
+
+    reply = await _run_agent_loop(filtered.text, customer_id, given_name)
+    if filtered.warning:
+        return f"{filtered.warning}\n\n{reply}"
+    return reply
+
+
+async def _run_agent_loop(user_message: str, customer_id: str, given_name: str) -> str:
     messages: list[dict] = [
         {"role": "system", "content": system_prompt(given_name)},
         {"role": "user", "content": user_message},

@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package omnibank.pii;
+
+service PiiFilter {
+  rpc Redact (RedactRequest) returns (RedactResponse);
+}
+
+message RedactRequest {
+  string text = 1;
+  // "user_input" or "tool_result" — used for metrics labeling
+  string source = 2;
+  // Authenticated user's first name; if a PER entity matches this, it passes through unredacted
+  string given_name = 3;
+}
+
+message RedactResponse {
+  string text = 1;
+  // "REDACT" (default) or "BLOCK" (request must be rejected)
+  string decision = 2;
+  // Optional warning message to surface to the user
+  string warning_message = 3;
+}

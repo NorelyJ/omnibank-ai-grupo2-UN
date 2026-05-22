@@ -2,3 +2,5 @@
 pytest==8.3.3
 httpx==0.27.2
 ruff==0.6.9
+# Only needed to regenerate the gRPC stubs from proto/pii.proto.
+grpcio-tools==1.66.2

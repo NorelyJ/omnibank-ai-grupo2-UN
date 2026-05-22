@@ -9,3 +9,6 @@ select = ["E", "F", "I", "W", "UP", "B"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+filterwarnings = [
+    "ignore:Importing 'parser.split_arg_string':DeprecationWarning",
+]

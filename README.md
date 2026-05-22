@@ -3,7 +3,8 @@
 PII-protected conversational agent for OmniBank. University project, DevOps & SRE UNAL 2026.
 
 - **PRD:** issue [#1](https://github.com/NorelyJ/omnibank-ai-grupo2-UN/issues/1)
-- **Slice 1 (this scaffold):** issue [#2](https://github.com/NorelyJ/omnibank-ai-grupo2-UN/issues/2)
+- **Slice 1 (scaffold):** issue [#2](https://github.com/NorelyJ/omnibank-ai-grupo2-UN/issues/2)
+- **Slice 2 (PII filter):** issue [#6](https://github.com/NorelyJ/omnibank-ai-grupo2-UN/issues/6)
 
 ## Repo layout
 
@@ -73,13 +74,23 @@ Two env vars allow direct curl testing without standing up Cognito/Kong locally:
 
 **The agent refuses to start (`exit 2`) if `SKIP_JWT_VALIDATION=true` AND `ENV=production`.** This prevents a misconfigured Helm value from silently disabling auth in a deployed environment.
 
-## What's in Slice 1 (this commit)
+## What's built so far
 
+**Slice 1 — scaffold**
 - Monorepo scaffold, three minimal services, docker-compose, Makefile, tests, lint.
 - One OpenAI function-calling tool (`get_my_accounts`).
 - One hardcoded customer (Juan / `CUST-001`).
-- PII filter is a pass-through stub (replaced in Slice 2).
-- Redis is in the stack but the agent does not use it yet (Slice 3 wires conversation history).
-- No JWT validation in this slice (Slice 7 adds Kong + Cognito).
+
+**Slice 2 — PII filter**
+- Real hybrid PII detector: regex (cédula, NIT with check digit, Colombian mobile,
+  email, account, Luhn-validated card, IPv4/IPv6) + spaCy `es_core_news_md` NER
+  (person, location, organization).
+- Redaction policy engine: card numbers BLOCK the request; everything else is
+  redacted to `[TIPO]` placeholders; the authenticated user's own first name
+  passes through.
+- nlp-agent scrubs every user message through the filter before the LLM, and
+  fails safe (no LLM call) if the filter is unreachable.
+
+Still stubbed: Redis history (Slice 3), JWT validation (Slice 7).
 
 See issues [#2 — #13](https://github.com/NorelyJ/omnibank-ai-grupo2-UN/issues) for the full slice plan.

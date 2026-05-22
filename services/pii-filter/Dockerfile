@@ -5,17 +5,17 @@ FROM base AS builder
 WORKDIR /build
 COPY requirements.txt .
 RUN pip install --prefix=/install -r requirements.txt
-COPY proto ./proto
-COPY app ./app
-# Generate gRPC stubs into app/ and fix the relative import in the generated _grpc file.
-RUN PYTHONPATH=/install/lib/python3.12/site-packages \
-    python -m grpc_tools.protoc -I=proto --python_out=app --grpc_python_out=app proto/pii.proto \
-    && sed -i 's/^import pii_pb2/from . import pii_pb2/' app/pii_pb2_grpc.py
+# spaCy Spanish model — baked into the image at build time, no runtime download.
+RUN pip install --prefix=/install \
+    https://github.com/explosion/spacy-models/releases/download/es_core_news_md-3.7.0/es_core_news_md-3.7.0-py3-none-any.whl
 
 FROM base AS runtime
 WORKDIR /app
 COPY --from=builder /install /usr/local
-COPY --from=builder /build/app ./app
+# gRPC stubs (app/pii_pb2*.py) are committed; regenerate with grpcio-tools if the
+# proto changes — see requirements-dev.txt.
+COPY app ./app
+COPY proto ./proto
 ARG GIT_SHA=dev
 ENV GIT_SHA=$GIT_SHA
 EXPOSE 8002 50051

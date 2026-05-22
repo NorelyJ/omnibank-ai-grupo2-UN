@@ -91,6 +91,32 @@ Two env vars allow direct curl testing without standing up Cognito/Kong locally:
 - nlp-agent scrubs every user message through the filter before the LLM, and
   fails safe (no LLM call) if the filter is unreachable.
 
-Still stubbed: Redis history (Slice 3), JWT validation (Slice 7).
+**Slice 3 — intents + history**
+- Three users (Juan / María / Carlos) with distinct accounts and transactions.
+- Three typed tools: `get_my_accounts`, `list_my_transactions`, `get_product_info`.
+- Redis conversation history (24h TTL, PII-redacted, best-effort).
+
+Still stubbed: JWT validation (Slice 7).
 
 See issues [#2 — #13](https://github.com/NorelyJ/omnibank-ai-grupo2-UN/issues) for the full slice plan.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every pull request and on pushes to `main`:
+
+1. **lint** — `ruff check` + `ruff format --check` on all three services.
+2. **test** — `pytest` per service (matrix), spaCy model installed for pii-filter.
+3. **build-and-push** — multi-stage Docker build per service. Images are pushed to
+   the **GitHub Container Registry** (`ghcr.io/<owner>/omnibank-<service>`) tagged
+   with the git short SHA, plus `:latest` on `main`. Pull requests build the images
+   to prove the Dockerfiles work but do **not** push.
+
+### Why ghcr.io instead of ECR
+
+ECR is the natural registry on AWS, and it remains fully declared in
+`infra/terraform/ecr.tf` for reference. It is **not** used as the live registry:
+AWS Academy's `LabRole` cannot create the IAM OIDC provider that GitHub Actions
+needs to obtain short-lived ECR push credentials, and the rotating 4-hour Academy
+session keys cannot be safely stored as long-lived CI secrets. `ghcr.io`
+authenticates with the workflow's built-in `GITHUB_TOKEN` — no AWS credentials, no
+OIDC provider — so it is the registry CI actually publishes to.

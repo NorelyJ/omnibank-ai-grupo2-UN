@@ -1,0 +1,39 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+
+  mock-core-banking:
+    build: ./services/mock-core-banking
+    ports: ["8001:8001"]
+    volumes:
+      - ./services/mock-core-banking/app:/app/app
+      - ./services/mock-core-banking/data:/app/data
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+
+  pii-filter:
+    build: ./services/pii-filter
+    ports:
+      - "8002:8002"
+      - "50051:50051"
+
+  nlp-agent:
+    build: ./services/nlp-agent
+    ports: ["8000:8000"]
+    env_file: .env
+    environment:
+      REDIS_URL: redis://redis:6379
+      PII_FILTER_GRPC: pii-filter:50051
+      MOCK_BANKING_URL: http://mock-core-banking:8001
+      OPENAI_MODEL: gpt-4o-mini
+      SKIP_JWT_VALIDATION: "true"
+      DEV_USER_BANK_CUSTOMER_ID: CUST-001
+      DEV_USER_GIVEN_NAME: Juan
+      ENV: dev
+    volumes:
+      - ./services/nlp-agent/app:/app/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      - redis
+      - pii-filter
+      - mock-core-banking

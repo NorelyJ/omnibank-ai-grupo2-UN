@@ -1,0 +1,34 @@
+{
+  "CUST-001": {
+    "customer_id": "CUST-001",
+    "first_name": "Juan",
+    "last_name": "Ramírez",
+    "email": "juan@omnibank.demo",
+    "accounts": [
+      {
+        "account_id": "AHO-001",
+        "type": "savings",
+        "balance_cop": 5432100,
+        "currency": "COP"
+      }
+    ],
+    "transactions": [
+      {
+        "txn_id": "T001",
+        "account_id": "AHO-001",
+        "date": "2026-05-15",
+        "amount_cop": -85000,
+        "description": "Compra Éxito Bogotá",
+        "category": "groceries"
+      },
+      {
+        "txn_id": "T002",
+        "account_id": "AHO-001",
+        "date": "2026-05-14",
+        "amount_cop": 2500000,
+        "description": "Nómina Empresa S.A.S.",
+        "category": "salary"
+      }
+    ]
+  }
+}

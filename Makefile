@@ -6,7 +6,8 @@ KIND_CLUSTER := omnibank
 COMPOSE_PROJECT := omnibank-ai-grupo2-un
 
 .PHONY: help dev down logs test lint format install-dev \
-        helm-lint kind-up kind-load kind-down deploy-local install-kps
+        helm-lint kind-up kind-load kind-down deploy-local install-kps \
+        install-kong deploy-eks get-token
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -93,3 +94,46 @@ install-kps: ## Install kube-prometheus-stack + the OmniBank Grafana dashboard
 	kubectl apply -f infra/observability/grafana-dashboard.yaml
 	@echo "kube-prometheus-stack installed."
 	@echo "Grafana: kubectl -n monitoring port-forward svc/kps-grafana 3000:80"
+
+# --- EKS deploy + Kong --------------------------------------------------------
+
+install-kong: ## Install Kong API Gateway (DBless) in front of the agent
+	kubectl create configmap kong-declarative \
+		--from-file=kong.yaml=infra/kong/kong-declarative.yaml \
+		--dry-run=client -o yaml | kubectl apply -f -
+	helm repo add kong https://charts.konghq.com
+	helm repo update kong
+	helm upgrade --install kong kong/kong -f $(HELM_DIR)/kong-values.yaml --wait --timeout 300s
+	@echo "Kong installed. NLB DNS: kubectl get svc kong-kong-proxy -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'"
+
+deploy-eks: ## Deploy the full stack to EKS (Secret from Secrets Manager + Helm)
+	@echo "→ syncing OpenAI key from AWS Secrets Manager into a Kubernetes Secret..."
+	@OPENAI_KEY=$$(aws secretsmanager get-secret-value --secret-id omnibank/openai-api-key \
+		--query SecretString --output text); \
+	kubectl create secret generic omnibank-secrets \
+		--from-literal=OPENAI_API_KEY=$$OPENAI_KEY \
+		--dry-run=client -o yaml | kubectl apply -f -
+	helm dependency update $(HELM_DIR)/omnibank
+	@echo "→ deploying umbrella chart with Terraform-derived endpoints..."
+	@cd $(TF_DIR) && \
+	REDIS=$$(terraform output -raw redis_endpoint) && \
+	JWKS=$$(terraform output -raw cognito_jwks_url) && \
+	CLIENT=$$(terraform output -raw cognito_client_id) && \
+	cd $(CURDIR) && \
+	helm upgrade --install omnibank $(HELM_DIR)/omnibank \
+		-f $(HELM_DIR)/omnibank/values-prod.yaml \
+		--set global.imageTag=$$(git rev-parse --short HEAD) \
+		--set nlp-agent.config.REDIS_URL=redis://$$REDIS:6379 \
+		--set nlp-agent.config.COGNITO_JWKS_URL=$$JWKS \
+		--set nlp-agent.config.COGNITO_CLIENT_ID=$$CLIENT \
+		--wait --timeout 600s
+	@echo "deploy-eks done."
+
+get-token: ## Print a Cognito ID token. Usage: make get-token USER=juan|maria|carlos
+	@case "$(USER)" in juan|maria|carlos) ;; \
+		*) echo "Usage: make get-token USER=juan|maria|carlos"; exit 1;; esac
+	@cd $(TF_DIR) && CLIENT=$$(terraform output -raw cognito_client_id) && cd $(CURDIR) && \
+	aws cognito-idp initiate-auth --auth-flow USER_PASSWORD_AUTH \
+		--client-id $$CLIENT \
+		--auth-parameters USERNAME=$(USER)@omnibank.demo,PASSWORD=Demo1234! \
+		--query 'AuthenticationResult.IdToken' --output text

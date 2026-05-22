@@ -8,3 +8,4 @@ pydantic
 grpcio
 protobuf
 redis
+python-jose[cryptography]

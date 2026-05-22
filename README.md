@@ -120,3 +120,30 @@ needs to obtain short-lived ECR push credentials, and the rotating 4-hour Academ
 session keys cannot be safely stored as long-lived CI secrets. `ghcr.io`
 authenticates with the workflow's built-in `GITHUB_TOKEN` — no AWS credentials, no
 OIDC provider — so it is the registry CI actually publishes to.
+
+## API gateway and authentication
+
+Requests reach the agent through **Kong** (DBless, behind an AWS NLB). Kong owns
+**routing** and **rate limiting** — `30 req/min` per client IP on `/v1/chat` — the
+things OSS Kong does well in declarative config (`infra/kong/kong-declarative.yaml`).
+
+**JWT validation is done in the agent, not in Kong.** This is the HITL decision
+called out in the PRD's risk register, and the reasoning:
+
+- Wiring Kong's OSS `jwt` plugin to Cognito means templating Cognito's **rotating**
+  RSA public keys into Kong's declarative config — Cognito publishes its keys at a
+  JWKS URL and rotates them, which a static DBless file cannot track.
+- OSS Kong's `request-transformer` **cannot read JWT claims**, so it cannot forward
+  `custom:bank_customer_id` / `sub` / `given_name` to the upstream as headers
+  (that needs a custom plugin or Kong Enterprise).
+
+The agent therefore validates the Cognito **ID token** itself (`app/auth.py`,
+`python-jose`): it fetches Cognito's JWKS, caches it for an hour, verifies the
+signature, expiry and audience, and reads the custom claims directly. This handles
+key rotation automatically and is unit-tested offline (`tests/test_auth.py`). The
+agent still accepts a Kong-injected `X-Bank-Customer-Id` header if a future
+gateway-side validation is added — both paths are supported.
+
+> ID token (not access token): AWS Academy's `LabRole` cannot provision the
+> Pre-Token Generation Lambda needed to put custom attributes on the access token,
+> so the agent reads `custom:bank_customer_id` from the **ID token**.

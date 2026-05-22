@@ -1,0 +1,26 @@
+# Kong DBless declarative config.
+#
+# Kong fronts the agent for routing + rate limiting — the things OSS Kong does
+# well. JWT validation is NOT done here: wiring the OSS `jwt` plugin to Cognito's
+# rotating JWKS means templating RSA public keys into this file, and the OSS
+# `request-transformer` cannot forward JWT claims to upstream headers. The agent
+# validates the Cognito ID token itself instead (see app/auth.py and the README).
+_format_version: "3.0"
+
+services:
+  - name: nlp-agent
+    url: http://nlp-agent.default.svc.cluster.local:8000
+    routes:
+      - name: chat
+        paths:
+          - /v1/chat
+        strip_path: false
+        methods:
+          - POST
+    plugins:
+      # 30 requests/minute per client IP.
+      - name: rate-limiting
+        config:
+          minute: 30
+          limit_by: ip
+          policy: local

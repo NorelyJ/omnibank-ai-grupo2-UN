@@ -147,3 +147,16 @@ gateway-side validation is added — both paths are supported.
 > ID token (not access token): AWS Academy's `LabRole` cannot provision the
 > Pre-Token Generation Lambda needed to put custom attributes on the access token,
 > so the agent reads `custom:bank_customer_id` from the **ID token**.
+
+## Logging
+
+Container logs ship to a single CloudWatch Logs group, `/aws/eks/omnibank`, via an
+**AWS for Fluent Bit** DaemonSet (`make install-logging`,
+`infra/helm/fluentbit-values.yaml`) — one log stream per pod, so logs survive pod
+restarts and the nightly cluster destroy. The DaemonSet writes to CloudWatch using
+the node IAM role (AWS Academy's `LabRole`).
+
+> **LabRole fallback:** if `LabRole` lacks `logs:PutLogEvents` (test this on day
+> one with `aws logs put-log-events`), skip `make install-logging` and rely on
+> `kubectl logs` / the Grafana/Prometheus stack for the demo. The DaemonSet is
+> additive observability, not a hard dependency of the chat path.

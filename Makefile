@@ -7,7 +7,7 @@ COMPOSE_PROJECT := omnibank-ai-grupo2-un
 
 .PHONY: help dev down logs test lint format install-dev \
         helm-lint kind-up kind-load kind-down deploy-local install-kps \
-        install-kong deploy-eks get-token
+        install-kong deploy-eks get-token install-logging
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -137,3 +137,10 @@ get-token: ## Print a Cognito ID token. Usage: make get-token USER=juan|maria|ca
 		--client-id $$CLIENT \
 		--auth-parameters USERNAME=$(USER)@omnibank.demo,PASSWORD=Demo1234! \
 		--query 'AuthenticationResult.IdToken' --output text
+
+install-logging: ## Install the FluentBit DaemonSet shipping container logs to CloudWatch
+	helm repo add eks https://aws.github.io/eks-charts
+	helm repo update eks
+	helm upgrade --install aws-for-fluent-bit eks/aws-for-fluent-bit \
+		--namespace kube-system -f $(HELM_DIR)/fluentbit-values.yaml --wait --timeout 300s
+	@echo "FluentBit installed — logs shipping to CloudWatch group /aws/eks/omnibank"

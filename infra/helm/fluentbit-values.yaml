@@ -1,0 +1,35 @@
+# Values for the aws-for-fluent-bit Helm chart.
+# Ships container stdout/stderr to a single CloudWatch Logs group so logs survive
+# pod restarts and the nightly cluster destroy. The DaemonSet writes to CloudWatch
+# using the node IAM role (AWS Academy's LabRole).
+
+# Only ship logs from the application namespaces.
+input:
+  tag: "application.*"
+  path: "/var/log/containers/*_default_*.log,/var/log/containers/*_omnibank_*.log"
+  multilineParser: docker, cri
+
+cloudWatchLogs:
+  enabled: true
+  region: us-east-1
+  logGroupName: /aws/eks/omnibank
+  # One log stream per pod.
+  logStreamPrefix: "pod-"
+  autoCreateGroup: true
+  logRetentionDays: 7
+
+# Single CloudWatch destination — no Firehose / Kinesis / OpenSearch.
+firehose:
+  enabled: false
+kinesis:
+  enabled: false
+elasticsearch:
+  enabled: false
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi

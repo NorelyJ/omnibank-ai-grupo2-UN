@@ -120,3 +120,26 @@ needs to obtain short-lived ECR push credentials, and the rotating 4-hour Academ
 session keys cannot be safely stored as long-lived CI secrets. `ghcr.io`
 authenticates with the workflow's built-in `GITHUB_TOKEN` — no AWS credentials, no
 OIDC provider — so it is the registry CI actually publishes to.
+
+## Cost discipline
+
+The project runs under an AWS Academy **$100 credit cap**. The EKS control plane
+(~$0.10/h) plus two `t3.medium` nodes and ElastiCache burn the budget fast if left
+running overnight, so the team follows a stop/destroy cadence driven by Makefile
+targets:
+
+| Target | When | What it does |
+|---|---|---|
+| `make stop-night` | Every weeknight (~8pm) | Scales the EKS node group to 0 and destroys ElastiCache Redis. Control plane, VPC and Cognito stay up for a fast morning restart. |
+| `make start-day`  | Next morning | Scales nodes back to 2 and recreates ElastiCache. Cluster is workable again within ~10 min. |
+| `make destroy-all`| Weekends / long gaps | Full `terraform destroy`. Requires typing `destroy` to confirm — there is no flag to skip the prompt. |
+| `make budget-check` | Daily | Reads AWS Cost Explorer and prints `Spent $X.XX of $100.00 cap (XX%)`, warning past 70%. |
+
+**Set an 8pm weeknight calendar reminder** for the whole team so `make stop-night`
+is never forgotten — a single missed night of two nodes + ElastiCache is roughly
+$3–4 of the cap.
+
+**Expected envelope:** a disciplined 3-week run costs ~$110–125 of raw resource
+time, which the stop/destroy cadence compresses to **under the $100 cap** (target:
+under $90, a $10 cushion). Overspend is caught within a day by `make budget-check`
+rather than at the cap.

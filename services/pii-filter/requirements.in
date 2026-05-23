@@ -2,5 +2,5 @@ fastapi
 uvicorn[standard]
 prometheus-fastapi-instrumentator
 grpcio
-grpcio-tools
 protobuf
+spacy

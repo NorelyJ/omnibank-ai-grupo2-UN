@@ -11,11 +11,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from prometheus_fastapi_instrumentator import Instrumentator
 
+from app.detector import warmup as warmup_spacy
 from app.grpc_server import serve as serve_grpc
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    # Load the spaCy model before serving so the first Redact() meets the 200ms budget.
+    await asyncio.to_thread(warmup_spacy)
     grpc_task = asyncio.create_task(serve_grpc())
     try:
         yield

@@ -4,3 +4,5 @@ prometheus-fastapi-instrumentator
 openai
 httpx
 pydantic
+grpcio
+protobuf

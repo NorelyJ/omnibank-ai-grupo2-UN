@@ -5,30 +5,50 @@
     "last_name": "Ramírez",
     "email": "juan@omnibank.demo",
     "accounts": [
-      {
-        "account_id": "AHO-001",
-        "type": "savings",
-        "balance_cop": 5432100,
-        "currency": "COP"
-      }
+      {"account_id": "AHO-001", "type": "savings", "balance_cop": 5432100, "currency": "COP"},
+      {"account_id": "COR-001", "type": "checking", "balance_cop": 1280000, "currency": "COP"}
     ],
     "transactions": [
-      {
-        "txn_id": "T001",
-        "account_id": "AHO-001",
-        "date": "2026-05-15",
-        "amount_cop": -85000,
-        "description": "Compra Éxito Bogotá",
-        "category": "groceries"
-      },
-      {
-        "txn_id": "T002",
-        "account_id": "AHO-001",
-        "date": "2026-05-14",
-        "amount_cop": 2500000,
-        "description": "Nómina Empresa S.A.S.",
-        "category": "salary"
-      }
+      {"txn_id": "T001", "account_id": "AHO-001", "date": "2026-05-18", "amount_cop": -85000, "description": "Compra Exito Bogota", "category": "groceries"},
+      {"txn_id": "T002", "account_id": "AHO-001", "date": "2026-05-15", "amount_cop": 2500000, "description": "Nomina Empresa SAS", "category": "salary"},
+      {"txn_id": "T003", "account_id": "AHO-001", "date": "2026-05-12", "amount_cop": -120000, "description": "Pago servicios publicos", "category": "utilities"},
+      {"txn_id": "T004", "account_id": "COR-001", "date": "2026-05-10", "amount_cop": -45000, "description": "Restaurante Andres", "category": "dining"},
+      {"txn_id": "T005", "account_id": "COR-001", "date": "2026-05-08", "amount_cop": 300000, "description": "Transferencia recibida", "category": "transfer"},
+      {"txn_id": "T006", "account_id": "AHO-001", "date": "2026-05-03", "amount_cop": -210000, "description": "Compra Falabella", "category": "shopping"}
+    ]
+  },
+  "CUST-002": {
+    "customer_id": "CUST-002",
+    "first_name": "María",
+    "last_name": "Gómez",
+    "email": "maria@omnibank.demo",
+    "accounts": [
+      {"account_id": "AHO-002", "type": "savings", "balance_cop": 18750000, "currency": "COP"},
+      {"account_id": "TDC-002", "type": "credit_card", "balance_cop": -2340000, "currency": "COP"}
+    ],
+    "transactions": [
+      {"txn_id": "T101", "account_id": "AHO-002", "date": "2026-05-19", "amount_cop": 4200000, "description": "Nomina Hospital Central", "category": "salary"},
+      {"txn_id": "T102", "account_id": "AHO-002", "date": "2026-05-16", "amount_cop": -950000, "description": "Pago arriendo", "category": "housing"},
+      {"txn_id": "T103", "account_id": "TDC-002", "date": "2026-05-14", "amount_cop": -680000, "description": "Tiquetes Avianca", "category": "travel"},
+      {"txn_id": "T104", "account_id": "TDC-002", "date": "2026-05-11", "amount_cop": -156000, "description": "Mercado Carulla", "category": "groceries"},
+      {"txn_id": "T105", "account_id": "AHO-002", "date": "2026-05-06", "amount_cop": -1200000, "description": "Pago tarjeta de credito", "category": "transfer"}
+    ]
+  },
+  "CUST-003": {
+    "customer_id": "CUST-003",
+    "first_name": "Carlos",
+    "last_name": "Díaz",
+    "email": "carlos@omnibank.demo",
+    "accounts": [
+      {"account_id": "AHO-003", "type": "savings", "balance_cop": 742300, "currency": "COP"},
+      {"account_id": "COR-003", "type": "checking", "balance_cop": 3905000, "currency": "COP"}
+    ],
+    "transactions": [
+      {"txn_id": "T201", "account_id": "COR-003", "date": "2026-05-20", "amount_cop": 3800000, "description": "Pago cliente freelance", "category": "income"},
+      {"txn_id": "T202", "account_id": "COR-003", "date": "2026-05-17", "amount_cop": -260000, "description": "Combustible Terpel", "category": "transport"},
+      {"txn_id": "T203", "account_id": "AHO-003", "date": "2026-05-13", "amount_cop": -90000, "description": "Suscripcion Netflix y Spotify", "category": "entertainment"},
+      {"txn_id": "T204", "account_id": "AHO-003", "date": "2026-05-09", "amount_cop": 500000, "description": "Ahorro programado", "category": "savings"},
+      {"txn_id": "T205", "account_id": "COR-003", "date": "2026-05-05", "amount_cop": -1750000, "description": "Cuota credito vehiculo", "category": "loan"}
     ]
   }
 }

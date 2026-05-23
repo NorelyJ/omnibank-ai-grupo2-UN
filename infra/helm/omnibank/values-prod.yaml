@@ -1,0 +1,25 @@
+# EKS. Images come from ghcr.io; the tag is set at deploy time:
+#   helm upgrade --install omnibank ./infra/helm/omnibank -f values-prod.yaml \
+#     --set global.imageTag=$(git rev-parse --short HEAD)
+global:
+  imageTag: latest
+
+nlp-agent:
+  image:
+    repository: ghcr.io/norelyj/omnibank-nlp-agent
+    pullPolicy: IfNotPresent
+  # REDIS_URL is overridden at deploy time with the ElastiCache endpoint.
+
+pii-filter:
+  image:
+    repository: ghcr.io/norelyj/omnibank-pii-filter
+    pullPolicy: IfNotPresent
+
+mock-core-banking:
+  image:
+    repository: ghcr.io/norelyj/omnibank-mock-core-banking
+    pullPolicy: IfNotPresent
+
+# EKS uses ElastiCache for Redis — no in-cluster Redis pod.
+redis:
+  enabled: false

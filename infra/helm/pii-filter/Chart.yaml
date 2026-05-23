@@ -1,0 +1,6 @@
+apiVersion: v2
+name: pii-filter
+description: OmniBank PII redaction service — gRPC redactor + FastAPI /health /metrics sidecar
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

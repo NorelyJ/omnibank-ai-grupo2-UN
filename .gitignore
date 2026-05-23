@@ -232,3 +232,14 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+
+# Helm
+infra/helm/*/charts/
+infra/helm/*/Chart.lock

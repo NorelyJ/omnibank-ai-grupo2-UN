@@ -1,0 +1,29 @@
+# Values for the kong/kong Helm chart — DBless, single replica, no HA (MVP).
+# The declarative config is mounted from the `kong-declarative` ConfigMap that
+# `make install-kong` creates from infra/kong/kong-declarative.yaml.
+
+env:
+  database: "off"
+
+dblessConfig:
+  configMap: kong-declarative
+
+# Kong's Kubernetes Ingress Controller is not needed — routing is fully declared
+# in the DBless config.
+ingressController:
+  enabled: false
+
+# Single pod, single replica — no HA for the demo.
+replicaCount: 1
+
+proxy:
+  enabled: true
+  type: LoadBalancer  # AWS provisions a Network Load Balancer
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

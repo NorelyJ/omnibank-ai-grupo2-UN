@@ -1,0 +1,34 @@
+{
+  "credit_card": {
+    "product_type": "credit_card",
+    "name": "Tarjeta OmniGold",
+    "annual_fee_cop": 120000,
+    "interest_rate_ea_pct": 25.5,
+    "summary": "Credit card with cashback on groceries and fuel, free airport lounge access twice a year.",
+    "requirements": "Minimum monthly income of 2,000,000 COP and a clean credit history."
+  },
+  "savings": {
+    "product_type": "savings",
+    "name": "Cuenta Ahorro Plus",
+    "annual_fee_cop": 0,
+    "interest_rate_ea_pct": 8.0,
+    "summary": "High-yield savings account, no maintenance fee, free debit card and transfers.",
+    "requirements": "Any customer with a valid ID can open it in minutes."
+  },
+  "mortgage": {
+    "product_type": "mortgage",
+    "name": "Credito Hipotecario OmniHogar",
+    "annual_fee_cop": 0,
+    "interest_rate_ea_pct": 11.2,
+    "summary": "Home loan financing up to 70% of the property value, terms from 5 to 20 years.",
+    "requirements": "Proof of income for at least 12 months and a down payment of 30%."
+  },
+  "loan": {
+    "product_type": "loan",
+    "name": "Prestamo Libre Inversion",
+    "annual_fee_cop": 0,
+    "interest_rate_ea_pct": 18.9,
+    "summary": "Personal loan with no spending restrictions, disbursed within 24 hours.",
+    "requirements": "Minimum monthly income of 1,200,000 COP and at least 6 months of bank history."
+  }
+}

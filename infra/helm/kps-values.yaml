@@ -1,0 +1,45 @@
+# Values for the kube-prometheus-stack Helm chart (installed as release "kps" in
+# namespace "monitoring"). Tuned for the OmniBank MVP: no AlertManager, 24h
+# retention, no persistence, Grafana dashboard sidecar enabled.
+
+alertmanager:
+  enabled: false
+
+prometheus:
+  prometheusSpec:
+    retention: 24h
+    # Pick up ServiceMonitors labelled `release: kps` (the per-service charts set this).
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelector:
+      matchLabels:
+        release: kps
+    # Ephemeral — no PVC. The cluster is rebuilt nightly.
+    retentionSize: ""
+    resources:
+      requests:
+        cpu: 100m
+        memory: 400Mi
+
+grafana:
+  # adminPassword is overridden at install time by `make install-kps`, which
+  # sources it from AWS Secrets Manager.
+  adminPassword: omnibank-admin
+  persistence:
+    enabled: false
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: ALL
+
+# Keep the footprint small for kind / a single-node demo cluster.
+nodeExporter:
+  enabled: true
+kubeStateMetrics:
+  enabled: true
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 100Mi

@@ -1,0 +1,36 @@
+image:
+  repository: ghcr.io/norelyj/omnibank-mock-core-banking
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8001
+      targetPort: 8001
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi
+
+config:
+  ENV: production
+
+hpa:
+  enabled: false
+
+networkPolicy:
+  enabled: true
+  # mock-core-banking accepts ingress only from the agent.
+  ingressFromLabel:
+    app: nlp-agent
+
+serviceMonitor:
+  enabled: true

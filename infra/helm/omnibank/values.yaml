@@ -1,0 +1,13 @@
+# Shared defaults for the umbrella chart. Override with values-dev.yaml (kind) or
+# values-prod.yaml (EKS), and set the image tag at deploy time:
+#   helm upgrade --install omnibank ./infra/helm/omnibank --set global.imageTag=$GIT_SHA
+
+# `global` is shared with every subchart — the image tag flows to all three services.
+global:
+  imageTag: latest
+
+# In-cluster Redis for local/kind use. On EKS this is disabled and ElastiCache
+# (Terraform) is used instead.
+redis:
+  enabled: true
+  image: redis:7-alpine

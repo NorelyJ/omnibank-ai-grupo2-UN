@@ -1,0 +1,92 @@
+# "OmniBank Chat Overview" Grafana dashboard.
+# Auto-loaded by the kube-prometheus-stack Grafana sidecar (label grafana_dashboard).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: omnibank-chat-overview-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  omnibank-chat-overview.json: |
+    {
+      "title": "OmniBank Chat Overview",
+      "uid": "omnibank-chat-overview",
+      "tags": ["omnibank"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "30s",
+      "time": { "from": "now-1h", "to": "now" },
+      "templating": { "list": [] },
+      "annotations": { "list": [] },
+      "panels": [
+        {
+          "id": 1,
+          "type": "stat",
+          "title": "Requests/sec (all services)",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+          "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+          "targets": [
+            { "refId": "A", "expr": "sum(rate(http_requests_total[5m]))" }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "p95 chat latency (5m)",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
+          "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+          "targets": [
+            { "refId": "A", "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{handler=\"/v1/chat\"}[5m])) by (le))" }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "LLM cost USD (last 24h)",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+          "fieldConfig": { "defaults": { "unit": "currencyUSD", "decimals": 4 }, "overrides": [] },
+          "targets": [
+            { "refId": "A", "expr": "sum(increase(omnibank_llm_cost_usd_total[24h]))" }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "timeseries",
+          "title": "PII redactions per minute (by entity type)",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+          "fieldConfig": { "defaults": { "custom": { "stacking": { "mode": "normal" } } }, "overrides": [] },
+          "targets": [
+            { "refId": "A", "expr": "sum by (entity_type) (rate(omnibank_pii_redactions_total[1m]) * 60)", "legendFormat": "{{entity_type}}" }
+          ]
+        },
+        {
+          "id": 5,
+          "type": "timeseries",
+          "title": "Tool calls per minute (by tool)",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+          "fieldConfig": { "defaults": { "custom": { "stacking": { "mode": "normal" } } }, "overrides": [] },
+          "targets": [
+            { "refId": "A", "expr": "sum by (tool_name) (rate(omnibank_tool_calls_total[1m]) * 60)", "legendFormat": "{{tool_name}}" }
+          ]
+        },
+        {
+          "id": 6,
+          "type": "timeseries",
+          "title": "nlp-agent CPU and memory",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+          "fieldConfig": { "defaults": {}, "overrides": [] },
+          "targets": [
+            { "refId": "A", "expr": "sum(rate(container_cpu_usage_seconds_total{pod=~\"nlp-agent.*\", container!=\"\"}[5m]))", "legendFormat": "CPU cores" },
+            { "refId": "B", "expr": "sum(container_memory_working_set_bytes{pod=~\"nlp-agent.*\", container!=\"\"})", "legendFormat": "Memory bytes" }
+          ]
+        }
+      ]
+    }

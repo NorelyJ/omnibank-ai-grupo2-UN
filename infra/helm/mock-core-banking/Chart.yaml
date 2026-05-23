@@ -1,0 +1,6 @@
+apiVersion: v2
+name: mock-core-banking
+description: OmniBank mock core-banking service — customer data from baked-in JSON
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

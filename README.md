@@ -3,7 +3,8 @@
 PII-protected conversational agent for OmniBank. University project, DevOps & SRE UNAL 2026.
 
 - **PRD:** issue [#1](https://github.com/NorelyJ/omnibank-ai-grupo2-UN/issues/1)
-- **Slice 1 (this scaffold):** issue [#2](https://github.com/NorelyJ/omnibank-ai-grupo2-UN/issues/2)
+- **Slice 1 (scaffold):** issue [#2](https://github.com/NorelyJ/omnibank-ai-grupo2-UN/issues/2)
+- **Slice 2 (PII filter):** issue [#6](https://github.com/NorelyJ/omnibank-ai-grupo2-UN/issues/6)
 
 ## Repo layout
 
@@ -73,13 +74,107 @@ Two env vars allow direct curl testing without standing up Cognito/Kong locally:
 
 **The agent refuses to start (`exit 2`) if `SKIP_JWT_VALIDATION=true` AND `ENV=production`.** This prevents a misconfigured Helm value from silently disabling auth in a deployed environment.
 
-## What's in Slice 1 (this commit)
+## What's built so far
 
+**Slice 1 — scaffold**
 - Monorepo scaffold, three minimal services, docker-compose, Makefile, tests, lint.
 - One OpenAI function-calling tool (`get_my_accounts`).
 - One hardcoded customer (Juan / `CUST-001`).
-- PII filter is a pass-through stub (replaced in Slice 2).
-- Redis is in the stack but the agent does not use it yet (Slice 3 wires conversation history).
-- No JWT validation in this slice (Slice 7 adds Kong + Cognito).
+
+**Slice 2 — PII filter**
+- Real hybrid PII detector: regex (cédula, NIT with check digit, Colombian mobile,
+  email, account, Luhn-validated card, IPv4/IPv6) + spaCy `es_core_news_md` NER
+  (person, location, organization).
+- Redaction policy engine: card numbers BLOCK the request; everything else is
+  redacted to `[TIPO]` placeholders; the authenticated user's own first name
+  passes through.
+- nlp-agent scrubs every user message through the filter before the LLM, and
+  fails safe (no LLM call) if the filter is unreachable.
+
+**Slice 3 — intents + history**
+- Three users (Juan / María / Carlos) with distinct accounts and transactions.
+- Three typed tools: `get_my_accounts`, `list_my_transactions`, `get_product_info`.
+- Redis conversation history (24h TTL, PII-redacted, best-effort).
+
+Still stubbed: JWT validation (Slice 7).
 
 See issues [#2 — #13](https://github.com/NorelyJ/omnibank-ai-grupo2-UN/issues) for the full slice plan.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every pull request and on pushes to `main`:
+
+1. **lint** — `ruff check` + `ruff format --check` on all three services.
+2. **test** — `pytest` per service (matrix), spaCy model installed for pii-filter.
+3. **build-and-push** — multi-stage Docker build per service. Images are pushed to
+   the **GitHub Container Registry** (`ghcr.io/<owner>/omnibank-<service>`) tagged
+   with the git short SHA, plus `:latest` on `main`. Pull requests build the images
+   to prove the Dockerfiles work but do **not** push.
+
+### Why ghcr.io instead of ECR
+
+ECR is the natural registry on AWS, and it remains fully declared in
+`infra/terraform/ecr.tf` for reference. It is **not** used as the live registry:
+AWS Academy's `LabRole` cannot create the IAM OIDC provider that GitHub Actions
+needs to obtain short-lived ECR push credentials, and the rotating 4-hour Academy
+session keys cannot be safely stored as long-lived CI secrets. `ghcr.io`
+authenticates with the workflow's built-in `GITHUB_TOKEN` — no AWS credentials, no
+OIDC provider — so it is the registry CI actually publishes to.
+
+## API gateway and authentication
+
+Requests reach the agent through **Kong** (DBless, behind an AWS NLB). Kong owns
+**routing** and **rate limiting** — `30 req/min` per client IP on `/v1/chat` — the
+things OSS Kong does well in declarative config (`infra/kong/kong-declarative.yaml`).
+
+**JWT validation is done in the agent, not in Kong.** This is the HITL decision
+called out in the PRD's risk register, and the reasoning:
+
+- Wiring Kong's OSS `jwt` plugin to Cognito means templating Cognito's **rotating**
+  RSA public keys into Kong's declarative config — Cognito publishes its keys at a
+  JWKS URL and rotates them, which a static DBless file cannot track.
+- OSS Kong's `request-transformer` **cannot read JWT claims**, so it cannot forward
+  `custom:bank_customer_id` / `sub` / `given_name` to the upstream as headers
+  (that needs a custom plugin or Kong Enterprise).
+
+The agent therefore validates the Cognito **ID token** itself (`app/auth.py`,
+`python-jose`): it fetches Cognito's JWKS, caches it for an hour, verifies the
+signature, expiry and audience, and reads the custom claims directly. This handles
+key rotation automatically and is unit-tested offline (`tests/test_auth.py`). The
+agent still accepts a Kong-injected `X-Bank-Customer-Id` header if a future
+gateway-side validation is added — both paths are supported.
+
+> ID token (not access token): AWS Academy's `LabRole` cannot provision the
+> Pre-Token Generation Lambda needed to put custom attributes on the access token,
+> so the agent reads `custom:bank_customer_id` from the **ID token**.
+
+## Logging
+
+Container logs ship to a single CloudWatch Logs group, `/aws/eks/omnibank`, via an
+**AWS for Fluent Bit** DaemonSet (`make install-logging`,
+`infra/helm/fluentbit-values.yaml`) — one log stream per pod, so logs survive pod
+restarts and the nightly cluster destroy. The DaemonSet writes to CloudWatch using
+the node IAM role (AWS Academy's `LabRole`).
+
+> **LabRole fallback:** if `LabRole` lacks `logs:PutLogEvents` (test this on day
+> one with `aws logs put-log-events`), skip `make install-logging` and rely on
+> `kubectl logs` / the Grafana/Prometheus stack for the demo. The DaemonSet is
+> additive observability, not a hard dependency of the chat path.
+
+## GitOps (demo cluster)
+
+The week-3 demo cluster is reconciled by **ArgoCD** (`make install-argocd`,
+demo-only — not part of the daily deploy flow). A single Application,
+`infra/argocd/omnibank-application.yaml`, points at the umbrella chart on `main`
+with `prune` + `selfHeal` auto-sync. Image-tag changes are made by editing
+`values-prod.yaml` in git — there is no Image Updater.
+
+ArgoCD installs HA-disabled (single replica per component), no persistence; the UI
+is reached with `kubectl -n argocd port-forward svc/argocd-server 8080:80` — no
+Ingress, no TLS.
+
+> The Application targets this repository on `main`. If the repo is private, add
+> repo credentials to ArgoCD first (`argocd repo add … --username … --password
+> <token>`, or a `repository` Secret) — otherwise the Application stays
+> `Unknown` with "authentication required". Kong and kube-prometheus-stack are
+> separate Helm releases, not part of the umbrella chart.

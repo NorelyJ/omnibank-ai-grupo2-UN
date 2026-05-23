@@ -40,6 +40,16 @@ def test_chat_without_customer_id_returns_401(monkeypatch):
     assert response.status_code == 401
 
 
+def test_chat_with_invalid_bearer_token_returns_401(monkeypatch):
+    monkeypatch.setattr("app.main.SKIP_JWT", False)
+    response = client.post(
+        "/v1/chat",
+        json={"message": "hola"},
+        headers={"Authorization": "Bearer not-a-real-jwt"},
+    )
+    assert response.status_code == 401
+
+
 def test_resolve_customer_prefers_header():
     cid, name = _resolve_customer("CUST-042", "María")
     assert cid == "CUST-042"

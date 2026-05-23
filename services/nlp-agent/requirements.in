@@ -1,6 +1,11 @@
 fastapi
 uvicorn[standard]
 prometheus-fastapi-instrumentator
+prometheus-client
 openai
 httpx
 pydantic
+grpcio
+protobuf
+redis
+python-jose[cryptography]

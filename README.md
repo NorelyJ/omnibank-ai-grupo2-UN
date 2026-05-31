@@ -185,7 +185,7 @@ on `/v1/chat`). **JWT validation is done in the agent** — wiring OSS Kong's `j
 plugin to Cognito needs Cognito's *rotating* RSA keys templated into a static
 DBless file, and OSS `request-transformer` cannot forward JWT claims as headers.
 `app/auth.py` (`python-jose`) fetches and caches Cognito's JWKS, verifies
-signature/expiry/audience, and reads the custom claims directly — handling key
+signature/expiry/token_use/client_id/issuer, and reads the customer claims directly — handling key
 rotation automatically. It is unit-tested offline (`tests/test_auth.py`). The agent
 also accepts a Kong-injected `X-Bank-Customer-Id` header, so a future gateway-side
 validation can be slotted in without code changes.

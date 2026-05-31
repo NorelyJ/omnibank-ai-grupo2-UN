@@ -25,7 +25,12 @@ services:
       REDIS_URL: redis://redis:6379
       PII_FILTER_GRPC: pii-filter:50051
       MOCK_BANKING_URL: http://mock-core-banking:8001
-      OPENAI_MODEL: gpt-4o-mini
+      AWS_REGION: us-east-1
+      BEDROCK_MODEL_ID: us.anthropic.claude-3-5-haiku-20241022-v1:0
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+      AWS_PROFILE: ${AWS_PROFILE:-}
       SKIP_JWT_VALIDATION: "true"
       DEV_USER_BANK_CUSTOMER_ID: CUST-001
       DEV_USER_GIVEN_NAME: Juan

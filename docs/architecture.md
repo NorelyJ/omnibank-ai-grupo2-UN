@@ -8,7 +8,6 @@ flowchart TB
 
     subgraph aws["AWS — us-east-1"]
         cognito[(Amazon Cognito<br/>user pool + 3 demo users)]
-        secrets[(Secrets Manager<br/>OpenAI API key)]
         cw[(CloudWatch Logs<br/>/aws/eks/omnibank)]
 
         subgraph eks["EKS cluster"]
@@ -26,16 +25,15 @@ flowchart TB
         end
     end
 
-    openai[OpenAI gpt-4o-mini]
+    bedrock[AWS Bedrock<br/>Claude 3.5 Haiku]
 
     user -->|"HTTPS POST /v1/chat + Bearer JWT"| kong
     kong --> agent
     cognito -. JWKS .-> agent
-    secrets -. make deploy-eks .-> agent
     agent -->|gRPC Redact| pii
     agent -->|HTTP| bank
     agent -->|history| redis
-    agent -->|redacted text only| openai
+    agent -->|"redacted text only · IRSA"| bedrock
     fluentbit -->|stdout/stderr| cw
     kps -. scrapes /metrics .-> agent
 ```
@@ -50,8 +48,8 @@ flowchart TB
    phone, email, account, IP and spaCy-detected names/locations/orgs are replaced
    with `[TIPO]` placeholders; a card number **blocks** the whole request. If the
    filter is unreachable, the agent fails safe — no LLM call.
-4. **Reason + tools.** The redacted message goes to OpenAI `gpt-4o-mini` with three
-   typed function-calling tools. The tool-call loop is bounded to 3 iterations.
+4. **Reason + tools.** The redacted message goes to AWS Bedrock (Claude 3.5 Haiku) with three
+   typed tools (Anthropic tool use). The tool-call loop is bounded to 3 iterations.
 5. **Scrub tool results.** Every mock-core-banking response is scrubbed by
    pii-filter (`source="tool_result"`) before re-entering the LLM context.
 6. **Persist.** The redacted user message and the reply are appended to Redis
@@ -61,7 +59,7 @@ flowchart TB
 
 ## The PII boundary
 
-The thesis in one line: **the only text that crosses the boundary to OpenAI is text
+The thesis in one line: **the only text that crosses the boundary to AWS Bedrock is text
 that has been through pii-filter.** There is no code path from a raw user message
-or a raw banking response to the OpenAI client that does not pass through
+or a raw banking response to the Bedrock client that does not pass through
 `pii_redact()` first — and if redaction cannot be performed, the turn is refused.

@@ -17,23 +17,26 @@ Nowhere in plaintext. The cédula is detected by pii-filter and replaced with a
 `[CÉDULA]` placeholder **before** the message reaches the LLM or Redis. Redis only
 ever receives the redacted form. Prometheus labels never contain identifiers. The
 cédula exists only in the original HTTP request body in memory for the few
-milliseconds before redaction — it is never logged, persisted, or sent to OpenAI.
+milliseconds before redaction — it is never logged, persisted, or sent to the LLM (AWS Bedrock).
 
 ### "How do you know the PII filter actually ran?"
 
 Three independent signals: (1) the `omnibank_pii_redactions_total` Prometheus
 counter increments per entity type — visible on the Grafana dashboard; (2) the
 agent **fails safe** — if the filter is unreachable it returns "no disponible" and
-never calls OpenAI (`test_chat_safety.py`); (3) the filter has a 31-test suite
+never calls Bedrock (`test_chat_safety.py`); (3) the filter has a 31-test suite
 covering every detector pattern and every policy path. The filter is on the
-critical path — the agent cannot reach OpenAI without going through it.
+critical path — the agent cannot reach Bedrock without going through it.
 
-### "How do you rotate the OpenAI key?"
+### "How does the agent authenticate to the model — is there a key to rotate?"
 
-The key lives in AWS Secrets Manager, never in git or an image. Rotate it by
-updating the secret, then re-running `make deploy-eks` — that re-fetches the secret
-and re-applies the Kubernetes Secret, and the rolling update picks it up. The key
-also has a $20 hard cap configured in the OpenAI dashboard as a blast-radius limit.
+There is no API key. The agent calls Claude Haiku on **AWS Bedrock** and is
+authenticated by **IRSA**: in EKS the pod's ServiceAccount assumes a scoped IAM
+role (`bedrock:InvokeModel` on the Claude Haiku ARNs only) and AWS issues
+short-lived credentials automatically — nothing long-lived is stored, so there is
+no key to leak or rotate. Locally the agent uses the developer's AWS credential
+chain. Spend is bounded by the model choice (Haiku) and can be capped with AWS
+Budgets / Cost Explorer alerts.
 
 ### "What happens if AWS Academy credentials expire mid-deploy?"
 

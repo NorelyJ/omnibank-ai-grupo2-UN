@@ -35,15 +35,6 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ .Chart.Name }}-config
-          {{- if .Values.secret }}
-          env:
-            - name: OPENAI_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.secret.name }}
-                  key: {{ .Values.secret.openaiKey }}
-                  optional: true
-          {{- end }}
           livenessProbe:
             httpGet:
               path: /health

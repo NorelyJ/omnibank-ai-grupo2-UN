@@ -42,7 +42,7 @@ spec:
     # In-namespace services: pii-filter, mock-core-banking, Redis.
     - to:
         - podSelector: {}
-    # OpenAI / external HTTPS.
+    # Bedrock / external HTTPS.
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0

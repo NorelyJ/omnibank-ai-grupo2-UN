@@ -1,6 +1,6 @@
 apiVersion: v2
 name: nlp-agent
-description: OmniBank conversational agent — FastAPI, OpenAI function calling, /v1/chat
+description: OmniBank conversational agent — FastAPI, Bedrock (Claude) tool use, /v1/chat
 type: application
 version: 0.1.0
 appVersion: "0.1.0"

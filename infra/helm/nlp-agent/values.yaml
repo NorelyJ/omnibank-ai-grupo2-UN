@@ -23,15 +23,17 @@ resources:
 # Non-secret env, injected via ConfigMap. GIT_SHA is added from the image tag.
 config:
   ENV: production
-  OPENAI_MODEL: gpt-4o-mini
+  AWS_REGION: us-east-1
+  BEDROCK_MODEL_ID: us.anthropic.claude-3-5-haiku-20241022-v1:0
   MOCK_BANKING_URL: http://mock-core-banking:8001
   PII_FILTER_GRPC: pii-filter:50051
   REDIS_URL: redis://redis:6379
 
-# OPENAI_API_KEY is read from this Secret (created by `make deploy-eks`).
-secret:
-  name: omnibank-secrets
-  openaiKey: OPENAI_API_KEY
+# Bedrock is reached keyless via IRSA — the SA is annotated with an IAM role ARN
+# (set per-environment; empty disables the annotation for local/kind).
+serviceAccount:
+  create: true
+  roleArn: ""
 
 hpa:
   enabled: true

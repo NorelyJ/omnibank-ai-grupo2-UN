@@ -1,6 +1,15 @@
 resource "aws_cognito_user_pool" "main" {
   name = "omnibank-users"
 
+  user_pool_tier = "ESSENTIALS"
+
+  lambda_config {
+    pre_token_generation_config {
+      lambda_arn     = aws_lambda_function.pretoken.arn
+      lambda_version = "V2_0"
+    }
+  }
+
   username_attributes      = ["email"]
   auto_verified_attributes = ["email"]
 
@@ -17,10 +26,9 @@ resource "aws_cognito_user_pool" "main" {
     allow_admin_create_user_only = true
   }
 
-  # Stable per-customer identifier used by mock-core-banking. We use the ID
-  # token (not the access token) because access tokens cannot carry custom
-  # attributes without a Pre-Token Generation Lambda, which AWS Academy
-  # LabRole cannot provision. Documented compromise — see README.
+  # Stable per-customer identifier used by mock-core-banking. A Pre-Token-Generation
+  # Lambda (V2_0) injects this into the access token as `bank_customer_id`; the agent
+  # validates the access token (app/auth.py). See cognito-pretoken-lambda.tf.
   schema {
     name                = "bank_customer_id"
     attribute_data_type = "String"

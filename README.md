@@ -7,7 +7,7 @@ authenticated users. University project, DevOps & SRE, UNAL 2026.
 **Thesis:** every team can wire an LLM to a banking API; few can prove the data path
 is safe. OmniBank AI's defining constraint is that **customer PII never reaches the
 third-party LLM**. Every user message *and* every backend banking response is passed
-through a dedicated PII-redaction service before any text is sent to OpenAI, and the
+through a dedicated PII-redaction service before any text is sent to AWS Bedrock, and the
 agent **fails safe** — it refuses to call the LLM at all if the filter is unavailable.
 
 - **PRD:** issue [#1](https://github.com/NorelyJ/omnibank-ai-grupo2-UN/issues/1)
@@ -23,14 +23,14 @@ flowchart LR
     agent -->|gRPC Redact| pii[pii-filter<br/>regex + spaCy]
     agent -->|HTTP| bank[mock-core-banking]
     agent -->|conversation history| redis[(Redis / ElastiCache)]
-    agent -->|redacted text only| openai[OpenAI gpt-4o-mini]
+    agent -->|redacted text only| bedrock[AWS Bedrock<br/>Claude 3.5 Haiku]
 ```
 
 **Request flow:** client → Kong (DBless, behind an AWS NLB) → nlp-agent. The agent
 validates the Cognito ID token, scrubs the user message through pii-filter (gRPC),
-looks up real data from mock-core-banking (HTTP) via OpenAI function calling, scrubs
+looks up real data from mock-core-banking (HTTP) via Bedrock (Claude) tool use, scrubs
 each tool result, persists redacted history in Redis, and returns a Spanish reply.
-**Only redacted text ever reaches OpenAI.**
+**Only redacted text ever reaches AWS Bedrock (Claude Haiku).**
 
 Ten deep modules: PII detector, redaction policy engine, conversation orchestrator,
 tool dispatcher, LLM client adapter, Redis history client, PII-filter gRPC client,
@@ -40,7 +40,7 @@ customer repository, JWT validator, metrics emitter.
 
 ```
 services/
-  nlp-agent/          FastAPI agent — OpenAI function calling, in-agent JWT, /v1/chat
+  nlp-agent/          FastAPI agent — Bedrock (Claude) tool use, in-agent JWT, /v1/chat
   pii-filter/         gRPC PII redactor (regex + spaCy) + FastAPI sidecar
   mock-core-banking/  FastAPI mock bank data from baked-in JSON
 infra/
@@ -57,8 +57,22 @@ docker-compose.yml    local dev stack       Makefile  all common operations
 
 ## Run locally (docker-compose)
 
+> **AWS credentials required.** The agent now calls Claude Haiku on **AWS Bedrock**
+> (keyless — no API key). Local dev therefore needs AWS credentials with Bedrock
+> model access. Export them before `make dev`:
+>
+> ```bash
+> aws sso login                                   # or: aws configure
+> eval "$(aws configure export-credentials --format env)"
+> make dev
+> ```
+>
+> In EKS the same code authenticates via IRSA (the pod's ServiceAccount assumes an
+> IAM role) — there is no secret to manage. This is the trade-off of the
+> "Bedrock everywhere" decision: one code path, but local dev is no longer AWS-free.
+
 ```bash
-cp .env.example .env          # set OPENAI_API_KEY=sk-...
+cp .env.example .env          # no API key needed — auth is via AWS credentials
 make dev                      # docker compose up --build — Redis + all 3 services
 ```
 
@@ -107,7 +121,7 @@ curl -X POST localhost:8000/v1/chat -H 'Content-Type: application/json' \
 
 ```bash
 cd infra/terraform && terraform init && terraform apply   # VPC, EKS, Cognito, ElastiCache
-cd ../.. && make deploy-eks      # OpenAI key from Secrets Manager → Helm deploy
+cd ../.. && make deploy-eks      # IRSA role attached to pod — no secret needed → Helm deploy
 make install-kong                # Kong API gateway (NLB)
 make install-kps                 # kube-prometheus-stack + Grafana dashboard
 make install-logging             # FluentBit → CloudWatch (see LabRole note)
@@ -180,16 +194,18 @@ validation can be slotted in without code changes.
 Every compromise below is forced by AWS Academy constraints ($100 cap, rotating
 4-hour credentials, `LabRole`-only IAM, `us-east-1`):
 
-1. **Bedrock → OpenAI.** AWS Academy does not support Bedrock, so the LLM is
-   OpenAI `gpt-4o-mini` (with a $20 hard cap on the API key).
+1. **AWS Bedrock (Claude 3.5 Haiku).** The agent calls Bedrock via IRSA — no API key
+   is stored. AWS Academy does not support Bedrock in lab accounts, so the demo runs
+   against a personal AWS account for Bedrock access.
 2. **ECR → GitHub Container Registry.** `LabRole` cannot create the IAM OIDC
    provider GitHub Actions needs to push to ECR; ECR stays declared in Terraform
    for reference. CI publishes to `ghcr.io` with the built-in `GITHUB_TOKEN`.
 3. **Cognito ID token, not access token.** `LabRole` cannot provision the
    Pre-Token Generation Lambda needed to put `custom:bank_customer_id` on the
    access token, so the agent reads it from the **ID token**.
-4. **Manual secret sync.** No IRSA on AWS Academy, so `make deploy-eks` fetches
-   the OpenAI key from Secrets Manager and creates a Kubernetes Secret itself.
+4. **IRSA for Bedrock (keyless).** The nlp-agent pod's ServiceAccount is annotated
+   with an IAM role that grants `bedrock:InvokeModel`. No API key or Kubernetes Secret
+   is needed — the AWS SDK picks up credentials from the pod's IRSA token automatically.
 5. **No TLS / no AUTH on ElastiCache Redis.** The TLS-capable replication group is
    harder to provision under `LabRole`; the plain cache cluster is used. Redis only
    ever holds PII-redacted text, and is reachable only inside the VPC.
@@ -201,7 +217,7 @@ Every compromise below is forced by AWS Academy constraints ($100 cap, rotating
    daily deploys use `make deploy-eks`.
 
 One further deliberate decision: the authenticated user's **own first name** is the
-single piece of personal data deliberately passed to OpenAI, for a personalized
+single piece of personal data deliberately passed to AWS Bedrock, for a personalized
 greeting — it is documented and controlled, every other identifier is redacted.
 
 ## Production gaps
@@ -209,7 +225,7 @@ greeting — it is documented and controlled, every other identifier is redacted
 What would change before this went to real production:
 
 - A real core-banking integration (not JSON baked into an image).
-- TLS + AUTH on Redis; IRSA / External Secrets instead of manual secret sync.
+- TLS + AUTH on Redis; External Secrets for any remaining secret management (IRSA is already used for Bedrock).
 - Distributed tracing (Jaeger/Tempo) and a service mesh with mTLS.
 - A post-LLM PII scan (currently only pre-LLM input and tool results are scanned).
 - AlertManager + on-call paging; streaming (SSE) chat responses.

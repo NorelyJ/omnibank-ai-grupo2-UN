@@ -119,11 +119,13 @@ curl -X POST localhost:8000/v1/chat -H 'Content-Type: application/json' \
 
 ## Run on EKS
 
+> **Order matters:** run `make install-kps` before `make deploy-eks` — kube-prometheus-stack installs the `ServiceMonitor` CRD that the services' ServiceMonitors depend on. Also note: the first `terraform apply` on a previously-deployed environment will destroy the old `omnibank/llm-api-key` Secrets Manager secret (recovery window 0) — Bedrock is keyless now, so this is expected.
+
 ```bash
 cd infra/terraform && terraform init && terraform apply   # VPC, EKS, Cognito, ElastiCache
-cd ../.. && make deploy-eks      # IRSA role attached to pod — no secret needed → Helm deploy
-make install-kong                # Kong API gateway (NLB)
-make install-kps                 # kube-prometheus-stack + Grafana dashboard
+cd ../.. && make install-kong    # Kong API gateway (NLB)
+make install-kps                 # kube-prometheus-stack + Grafana dashboard (installs ServiceMonitor CRD)
+make deploy-eks                  # IRSA role attached to pod — no secret needed → Helm deploy
 make install-logging             # FluentBit → CloudWatch (see LabRole note)
 ```
 

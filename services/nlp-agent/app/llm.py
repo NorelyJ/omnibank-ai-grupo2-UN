@@ -1,4 +1,4 @@
-"""OpenAI client + agent loop.
+"""Bedrock (Claude) client + agent loop.
 
 Every user message is scrubbed by the pii-filter before it reaches the LLM, and
 every tool result is scrubbed before it is added to the LLM context. The loop is
@@ -11,7 +11,7 @@ import logging
 import os
 
 import httpx
-from openai import AsyncOpenAI
+from anthropic import AsyncAnthropicBedrock
 
 from app import metrics
 from app.banking_client import get_accounts, get_transactions, list_products
@@ -20,7 +20,8 @@ from app.history import load as history_load
 from app.pii_client import PiiFilterUnavailable
 from app.pii_client import redact as pii_redact
 
-MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+MODEL = os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-3-5-haiku-20241022-v1:0")
+MAX_TOKENS = 1024
 MAX_ITERATIONS = 3
 
 # Shown when the PII filter is unreachable — the agent fails safe and never calls
@@ -31,62 +32,55 @@ FILTER_UNAVAILABLE_MSG = (
 
 logger = logging.getLogger("nlp-agent.llm")
 
-_client: AsyncOpenAI | None = None
+_client: AsyncAnthropicBedrock | None = None
 
 
-def client() -> AsyncOpenAI:
+def client() -> AsyncAnthropicBedrock:
     global _client
     if _client is None:
-        _client = AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
+        # No API key: SigV4 via the botocore credential chain (IRSA in EKS,
+        # env/profile locally).
+        _client = AsyncAnthropicBedrock(aws_region=os.getenv("AWS_REGION", "us-east-1"))
     return _client
 
 
 TOOLS = [
     {
-        "type": "function",
-        "function": {
-            "name": "get_my_accounts",
-            "description": "Obtiene las cuentas del cliente autenticado con sus saldos actuales.",
-            "parameters": {"type": "object", "properties": {}, "required": []},
+        "name": "get_my_accounts",
+        "description": "Obtiene las cuentas del cliente autenticado con sus saldos actuales.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "list_my_transactions",
+        "description": "Lista las transacciones recientes del cliente, opcionalmente "
+        "filtradas por cuenta.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "type": "string",
+                    "description": "ID de cuenta a filtrar, p. ej. AHO-001.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Cuántas transacciones traer (1-20). Por defecto 5.",
+                },
+            },
+            "required": [],
         },
     },
     {
-        "type": "function",
-        "function": {
-            "name": "list_my_transactions",
-            "description": "Lista las transacciones recientes del cliente, opcionalmente "
-            "filtradas por cuenta.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "account_id": {
-                        "type": "string",
-                        "description": "ID de cuenta a filtrar, p. ej. AHO-001.",
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "description": "Cuántas transacciones traer (1-20). Por defecto 5.",
-                    },
-                },
-                "required": [],
+        "name": "get_product_info",
+        "description": "Obtiene información de un producto bancario de OmniBank.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "product_type": {
+                    "type": "string",
+                    "enum": ["credit_card", "savings", "mortgage", "loan"],
+                }
             },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_product_info",
-            "description": "Obtiene información de un producto bancario de OmniBank.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "product_type": {
-                        "type": "string",
-                        "enum": ["credit_card", "savings", "mortgage", "loan"],
-                    }
-                },
-                "required": ["product_type"],
-            },
+            "required": ["product_type"],
         },
     },
 ]
@@ -171,17 +165,25 @@ async def chat(user_message: str, customer_id: str, given_name: str) -> str:
     return reply
 
 
+def _text_from(content) -> str:
+    """Join the text blocks of an Anthropic response into one string."""
+    return "".join(
+        block.text for block in content if getattr(block, "type", None) == "text"
+    ).strip()
+
+
 async def _run_agent_loop(
     user_message: str, history: list[dict], customer_id: str, given_name: str
 ) -> str:
-    messages: list[dict] = [{"role": "system", "content": system_prompt(given_name)}]
-    messages += [{"role": h["role"], "content": h["content"]} for h in history]
+    messages: list[dict] = [{"role": h["role"], "content": h["content"]} for h in history]
     messages.append({"role": "user", "content": user_message})
 
     for _ in range(MAX_ITERATIONS):
         try:
-            response = await client().chat.completions.create(
+            response = await client().messages.create(
                 model=MODEL,
+                max_tokens=MAX_TOKENS,
+                system=system_prompt(given_name),
                 messages=messages,
                 tools=TOOLS,
             )
@@ -190,30 +192,35 @@ async def _run_agent_loop(
             raise
         metrics.llm_calls_total.labels(model=MODEL, status="success").inc()
         metrics.record_llm_usage(response.usage)
-        msg = response.choices[0].message
-        if not msg.tool_calls:
-            return msg.content or ""
 
-        # Append the assistant's tool-call message, then dispatch each call.
-        messages.append(
-            {
-                "role": "assistant",
-                "content": msg.content,
-                "tool_calls": [
+        if response.stop_reason != "tool_use":
+            return _text_from(response.content)
+
+        # Record the assistant turn (text + tool_use blocks) as dicts, then answer
+        # each tool_use with a tool_result in a single user message.
+        assistant_content = []
+        for block in response.content:
+            block_type = getattr(block, "type", None)
+            if block_type == "text":
+                assistant_content.append({"type": "text", "text": block.text})
+            elif block_type == "tool_use":
+                assistant_content.append(
                     {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                        "type": "tool_use",
+                        "id": block.id,
+                        "name": block.name,
+                        "input": dict(block.input or {}),
                     }
-                    for tc in msg.tool_calls
-                ],
-            }
-        )
-        for tc in msg.tool_calls:
-            args = json.loads(tc.function.arguments or "{}")
-            raw = await _invoke_tool(tc.function.name, args, customer_id)
+                )
+        messages.append({"role": "assistant", "content": assistant_content})
+        tool_results: list[dict] = []
+        for block in response.content:
+            if getattr(block, "type", None) != "tool_use":
+                continue
+            raw = await _invoke_tool(block.name, dict(block.input or {}), customer_id)
             safe = await _redact_tool_result(raw, given_name)
-            messages.append({"role": "tool", "tool_call_id": tc.id, "content": safe})
+            tool_results.append({"type": "tool_result", "tool_use_id": block.id, "content": safe})
+        messages.append({"role": "user", "content": tool_results})
 
     return "Lo siento, no pude completar tu consulta en este momento."
 

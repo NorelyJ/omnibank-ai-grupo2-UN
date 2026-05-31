@@ -1,12 +1,12 @@
 """Slice 1 smoke tests for nlp-agent.
 
-These tests do NOT call OpenAI. They cover:
+These tests do NOT call Bedrock. They cover:
 - The HTTP surface (/health, /version)
 - The dev escape-hatch resolution
 - The production safety guard (SKIP_JWT + ENV=production must exit non-zero)
 
-End-to-end chat verification is the acceptance-criteria curl test, which requires a
-real OPENAI_API_KEY and is run via `docker compose up`.
+End-to-end chat verification is the acceptance-criteria curl test, which requires
+real AWS credentials with Bedrock access and is run via `docker compose up`.
 """
 
 import os
@@ -14,7 +14,7 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 
-os.environ.setdefault("OPENAI_API_KEY", "sk-test-not-used-in-smoke")
+os.environ.setdefault("AWS_REGION", "us-east-1")
 
 from app.config import assert_safety_or_exit  # noqa: E402
 from app.main import _resolve_customer, app  # noqa: E402

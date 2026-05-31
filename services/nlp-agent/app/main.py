@@ -58,7 +58,7 @@ def _resolve_customer(
             claims = validate_token(authorization.split(" ", 1)[1])
         except InvalidToken as exc:
             raise HTTPException(status_code=401, detail="Invalid token") from exc
-        customer_id = claims.get("custom:bank_customer_id")
+        customer_id = claims.get("bank_customer_id")
         if not customer_id:
             raise HTTPException(status_code=401, detail="Token missing bank_customer_id")
         return customer_id, claims.get("given_name", "Cliente")

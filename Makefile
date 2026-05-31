@@ -133,7 +133,7 @@ get-token: ## Print a Cognito ID token. Usage: make get-token USER=juan|maria|ca
 	aws cognito-idp initiate-auth --auth-flow USER_PASSWORD_AUTH --region us-east-1 \
 		--client-id $$CLIENT \
 		--auth-parameters USERNAME=$(USER)@omnibank.demo,PASSWORD=Demo1234! \
-		--query 'AuthenticationResult.IdToken' --output text
+		--query 'AuthenticationResult.AccessToken' --output text
 
 install-logging: ## Install the FluentBit DaemonSet shipping container logs to CloudWatch
 	helm repo add eks https://aws.github.io/eks-charts

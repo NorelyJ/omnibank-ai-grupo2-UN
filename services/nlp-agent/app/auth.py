@@ -2,7 +2,7 @@
 
 Primary auth is Kong's `jwt` plugin (it validates the token at the gateway and
 injects identity headers). This module is the documented fallback for when Kong's
-OSS JWT plugin cannot cleanly validate Cognito tokens: the agent verifies the ID
+OSS JWT plugin cannot cleanly validate Cognito tokens: the agent verifies the access
 token itself against Cognito's JWKS, with the JWKS cached in-process.
 """
 
@@ -37,15 +37,22 @@ def _get_jwks() -> dict:
 
 
 def validate_token(token: str) -> dict:
-    """Verify a Cognito ID token and return its claims.
+    """Verify a Cognito ACCESS token and return its claims.
 
-    Raises InvalidToken if the signature, expiry or audience does not check out.
+    Access tokens carry `token_use: "access"` and `client_id` (no `aud`). The
+    customer identity (`bank_customer_id`, `given_name`) is injected by the Cognito
+    Pre-Token-Generation Lambda. Raises InvalidToken on any failure.
     """
     try:
         kid = jwt.get_unverified_header(token).get("kid")
         key = next((k for k in _get_jwks().get("keys", []) if k["kid"] == kid), None)
         if key is None:
             raise InvalidToken("token signed by an unknown key")
-        return jwt.decode(token, key, algorithms=["RS256"], audience=COGNITO_CLIENT_ID)
+        claims = jwt.decode(token, key, algorithms=["RS256"], options={"verify_aud": False})
     except JWTError as exc:
         raise InvalidToken(str(exc)) from exc
+    if claims.get("token_use") != "access":
+        raise InvalidToken("not an access token")
+    if claims.get("client_id") != COGNITO_CLIENT_ID:
+        raise InvalidToken("token issued for a different client")
+    return claims

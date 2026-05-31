@@ -41,24 +41,51 @@ def _setup(monkeypatch):
     monkeypatch.setattr(auth, "_get_jwks", lambda: _jwks)
 
 
-def test_valid_token_returns_claims(monkeypatch):
+def test_valid_access_token_returns_claims(monkeypatch):
     _setup(monkeypatch)
     token = _make_token(
         {
-            "aud": _CLIENT_ID,
+            "token_use": "access",
+            "client_id": _CLIENT_ID,
             "exp": int(time.time()) + 3600,
-            "custom:bank_customer_id": "CUST-001",
+            "bank_customer_id": "CUST-001",
             "given_name": "Juan",
         }
     )
     claims = auth.validate_token(token)
-    assert claims["custom:bank_customer_id"] == "CUST-001"
+    assert claims["bank_customer_id"] == "CUST-001"
     assert claims["given_name"] == "Juan"
+
+
+def test_id_typed_token_is_rejected(monkeypatch):
+    _setup(monkeypatch)
+    token = _make_token(
+        {"token_use": "id", "client_id": _CLIENT_ID, "exp": int(time.time()) + 3600}
+    )
+    try:
+        auth.validate_token(token)
+        raise AssertionError("an ID-typed token must be rejected on the access-token path")
+    except auth.InvalidToken:
+        pass
+
+
+def test_wrong_client_id_is_rejected(monkeypatch):
+    _setup(monkeypatch)
+    token = _make_token(
+        {"token_use": "access", "client_id": "some-other-app", "exp": int(time.time()) + 3600}
+    )
+    try:
+        auth.validate_token(token)
+        raise AssertionError("a token for another client_id must be rejected")
+    except auth.InvalidToken:
+        pass
 
 
 def test_expired_token_is_rejected(monkeypatch):
     _setup(monkeypatch)
-    token = _make_token({"aud": _CLIENT_ID, "exp": int(time.time()) - 10})
+    token = _make_token(
+        {"token_use": "access", "client_id": _CLIENT_ID, "exp": int(time.time()) - 10}
+    )
     try:
         auth.validate_token(token)
         raise AssertionError("expired token should have been rejected")
@@ -66,19 +93,11 @@ def test_expired_token_is_rejected(monkeypatch):
         pass
 
 
-def test_wrong_audience_is_rejected(monkeypatch):
-    _setup(monkeypatch)
-    token = _make_token({"aud": "some-other-app", "exp": int(time.time()) + 3600})
-    try:
-        auth.validate_token(token)
-        raise AssertionError("token for another audience should have been rejected")
-    except auth.InvalidToken:
-        pass
-
-
 def test_tampered_token_is_rejected(monkeypatch):
     _setup(monkeypatch)
-    token = _make_token({"aud": _CLIENT_ID, "exp": int(time.time()) + 3600})
+    token = _make_token(
+        {"token_use": "access", "client_id": _CLIENT_ID, "exp": int(time.time()) + 3600}
+    )
     tampered = token[:-4] + ("aaaa" if not token.endswith("aaaa") else "bbbb")
     try:
         auth.validate_token(tampered)

@@ -108,4 +108,7 @@ resource "aws_cognito_user" "demo" {
     given_name                = each.value.given_name
     "custom:bank_customer_id" = each.value.bank_customer_id
   }
+  lifecycle {
+    ignore_changes = [attributes]
+  }
 }

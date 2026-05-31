@@ -2,6 +2,7 @@ SHELL := /bin/bash
 SERVICES := nlp-agent pii-filter mock-core-banking
 
 HELM_DIR     := infra/helm
+TF_DIR       := infra/terraform
 KIND_CLUSTER := omnibank
 COMPOSE_PROJECT := omnibank-ai-grupo2-un
 
@@ -108,10 +109,10 @@ install-kong: ## Install Kong API Gateway (DBless) in front of the agent
 
 deploy-eks: ## Deploy the full stack to EKS (Secret from Secrets Manager + Helm)
 	@echo "→ syncing OpenAI key from AWS Secrets Manager into a Kubernetes Secret..."
-	@OPENAI_KEY=$$(aws secretsmanager get-secret-value --secret-id omnibank/openai-api-key \
-		--query SecretString --output text); \
+	@OPENAI_KEY=$$(aws secretsmanager get-secret-value --secret-id omnibank/llm-api-key --region us-east-1 \
+		--query SecretString --output text | jq -r .api_key); \
 	kubectl create secret generic omnibank-secrets \
-		--from-literal=OPENAI_API_KEY=$$OPENAI_KEY \
+		--from-literal=OPENAI_API_KEY="$$OPENAI_KEY" \
 		--dry-run=client -o yaml | kubectl apply -f -
 	helm dependency update $(HELM_DIR)/omnibank
 	@echo "→ deploying umbrella chart with Terraform-derived endpoints..."
@@ -133,7 +134,7 @@ get-token: ## Print a Cognito ID token. Usage: make get-token USER=juan|maria|ca
 	@case "$(USER)" in juan|maria|carlos) ;; \
 		*) echo "Usage: make get-token USER=juan|maria|carlos"; exit 1;; esac
 	@cd $(TF_DIR) && CLIENT=$$(terraform output -raw cognito_client_id) && cd $(CURDIR) && \
-	aws cognito-idp initiate-auth --auth-flow USER_PASSWORD_AUTH \
+	aws cognito-idp initiate-auth --auth-flow USER_PASSWORD_AUTH --region us-east-1 \
 		--client-id $$CLIENT \
 		--auth-parameters USERNAME=$(USER)@omnibank.demo,PASSWORD=Demo1234! \
 		--query 'AuthenticationResult.IdToken' --output text

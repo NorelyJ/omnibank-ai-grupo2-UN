@@ -8,17 +8,25 @@ nlp-agent:
   image:
     repository: ghcr.io/norelyj/omnibank-nlp-agent
     pullPolicy: IfNotPresent
+  # ServiceMonitor disabled — kube-prometheus-stack isn't installed on EKS here
+  # (t3.micro Free Tier nodes can't host it). Re-enable when Prometheus is added.
+  serviceMonitor:
+    enabled: false
   # REDIS_URL is overridden at deploy time with the ElastiCache endpoint.
 
 pii-filter:
   image:
     repository: ghcr.io/norelyj/omnibank-pii-filter
     pullPolicy: IfNotPresent
+  serviceMonitor:
+    enabled: false
 
 mock-core-banking:
   image:
     repository: ghcr.io/norelyj/omnibank-mock-core-banking
     pullPolicy: IfNotPresent
+  serviceMonitor:
+    enabled: false
 
 # EKS uses ElastiCache for Redis — no in-cluster Redis pod.
 redis:

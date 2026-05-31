@@ -42,3 +42,8 @@ output "nlp_agent_irsa_role_arn" {
   description = "IAM role ARN the nlp-agent ServiceAccount assumes for Bedrock (IRSA)"
   value       = module.nlp_agent_irsa.iam_role_arn
 }
+
+output "fluentbit_irsa_role_arn" {
+  description = "IAM role ARN the aws-for-fluent-bit ServiceAccount assumes for CloudWatch (IRSA)"
+  value       = module.fluentbit_irsa.iam_role_arn
+}

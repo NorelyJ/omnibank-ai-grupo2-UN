@@ -138,8 +138,11 @@ get-token: ## Print a Cognito ID token. Usage: make get-token USER=juan|maria|ca
 install-logging: ## Install the FluentBit DaemonSet shipping container logs to CloudWatch
 	helm repo add eks https://aws.github.io/eks-charts
 	helm repo update eks
+	@cd $(TF_DIR) && ROLE=$$(terraform output -raw fluentbit_irsa_role_arn) && cd $(CURDIR) && \
 	helm upgrade --install aws-for-fluent-bit eks/aws-for-fluent-bit \
-		--namespace kube-system -f $(HELM_DIR)/fluentbit-values.yaml --wait --timeout 300s
+		--namespace kube-system -f $(HELM_DIR)/fluentbit-values.yaml \
+		--set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=$$ROLE \
+		--wait --timeout 300s
 	@echo "FluentBit installed — logs shipping to CloudWatch group /aws/eks/omnibank"
 
 install-argocd: ## Install ArgoCD and the omnibank Application (demo cluster, week 3)

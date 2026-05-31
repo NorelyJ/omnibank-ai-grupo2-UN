@@ -1,7 +1,6 @@
 # Values for the aws-for-fluent-bit Helm chart.
 # Ships container stdout/stderr to a single CloudWatch Logs group so logs survive
-# pod restarts and the nightly cluster destroy. The DaemonSet writes to CloudWatch
-# using the node IAM role (AWS Academy's LabRole).
+# pod restarts and the nightly cluster destroy. The DaemonSet writes to CloudWatch via an IRSA role (see infra/terraform/irsa-fluentbit.tf).
 
 # Only ship logs from the application namespaces.
 input:
@@ -33,3 +32,9 @@ resources:
   limits:
     cpu: 200m
     memory: 128Mi
+
+serviceAccount:
+  create: true
+  name: aws-for-fluent-bit
+  # eks.amazonaws.com/role-arn is injected at install time by `make install-logging`.
+  annotations: {}

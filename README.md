@@ -27,7 +27,7 @@ flowchart LR
 ```
 
 **Request flow:** client → Kong (DBless, behind an AWS NLB) → nlp-agent. The agent
-validates the Cognito ID token, scrubs the user message through pii-filter (gRPC),
+validates the Cognito access token, scrubs the user message through pii-filter (gRPC),
 looks up real data from mock-core-banking (HTTP) via Bedrock (Claude) tool use, scrubs
 each tool result, persists redacted history in Redis, and returns a Spanish reply.
 **Only redacted text ever reaches AWS Bedrock (Claude Haiku).**
@@ -126,7 +126,7 @@ cd infra/terraform && terraform init && terraform apply   # VPC, EKS, Cognito, E
 cd ../.. && make install-kong    # Kong API gateway (NLB)
 make install-kps                 # kube-prometheus-stack + Grafana dashboard (installs ServiceMonitor CRD)
 make deploy-eks                  # IRSA role attached to pod — no secret needed → Helm deploy
-make install-logging             # FluentBit → CloudWatch (see LabRole note)
+make install-logging             # FluentBit → CloudWatch (dedicated IRSA role)
 ```
 
 ### Multi-user demo flow
@@ -166,15 +166,14 @@ ship to CloudWatch via a FluentBit DaemonSet (`make install-logging`).
 
 ## Cost discipline
 
-The project runs under an AWS Academy **$100 credit cap**. Makefile targets enforce
-a stop/destroy cadence:
+The project targets a configurable **$100/month budget cap** (override `BUDGET_CAP`). Makefile targets enforce a stop/destroy cadence:
 
 | Target | When | Effect |
 |---|---|---|
 | `make stop-night` | Weeknights (~8pm) | EKS nodes → 0, ElastiCache destroyed |
 | `make start-day`  | Next morning | Nodes → 2, ElastiCache recreated |
 | `make destroy-all`| Weekends | Full `terraform destroy` (typed confirmation) |
-| `make budget-check` | Daily | Month-to-date spend vs the $100 cap |
+| `make budget-check` | Daily | Month-to-date spend vs the monthly budget cap |
 
 Set an 8pm weeknight team reminder. Expected envelope: ~$110–125 of raw resource
 time compressed by the cadence to **under $90**.
@@ -193,24 +192,23 @@ validation can be slotted in without code changes.
 
 ## Locked architectural compromises
 
-Every compromise below is forced by AWS Academy constraints ($100 cap, rotating
-4-hour credentials, `LabRole`-only IAM, `us-east-1`):
+Several constraints below were forced by the original AWS Academy environment; on this standard account they are now lifted (noted inline). The rest are deliberate design choices.
 
-1. **AWS Bedrock (Claude 3.5 Haiku).** The agent calls Bedrock via IRSA — no API key
-   is stored. AWS Academy does not support Bedrock in lab accounts, so the demo runs
-   against a personal AWS account for Bedrock access.
-2. **ECR → GitHub Container Registry.** `LabRole` cannot create the IAM OIDC
-   provider GitHub Actions needs to push to ECR; ECR stays declared in Terraform
-   for reference. CI publishes to `ghcr.io` with the built-in `GITHUB_TOKEN`.
-3. **Cognito ID token, not access token.** `LabRole` cannot provision the
-   Pre-Token Generation Lambda needed to put `custom:bank_customer_id` on the
-   access token, so the agent reads it from the **ID token**.
+1. **AWS Bedrock (Claude 3.5 Haiku) — LIFTED.** The agent calls Bedrock keyless via
+   IRSA (no API key stored). This runs on a standard AWS account with full Bedrock
+   access.
+2. **ECR → GitHub Container Registry.** The IAM OIDC provider for GitHub Actions
+   is not provisioned, so ECR stays declared in Terraform for reference only. CI
+   publishes to `ghcr.io` with the built-in `GITHUB_TOKEN`.
+3. **Cognito access token — LIFTED.** The agent now validates the **access token**;
+   `bank_customer_id` is injected by a Pre-Token-Generation Lambda, eliminating the
+   earlier ID-token workaround.
 4. **IRSA for Bedrock (keyless).** The nlp-agent pod's ServiceAccount is annotated
    with an IAM role that grants `bedrock:InvokeModel`. No API key or Kubernetes Secret
    is needed — the AWS SDK picks up credentials from the pod's IRSA token automatically.
-5. **No TLS / no AUTH on ElastiCache Redis.** The TLS-capable replication group is
-   harder to provision under `LabRole`; the plain cache cluster is used. Redis only
-   ever holds PII-redacted text, and is reachable only inside the VPC.
+5. **No TLS / no AUTH on ElastiCache Redis.** A deliberate demo-scale simplification;
+   the plain cache cluster is used. Redis only ever holds PII-redacted text and is
+   reachable only inside the VPC.
 6. **NetworkPolicies declared, enforcement depends on the CNI.** The zero-trust
    policies are always declared in Helm; enforcement requires a policy-capable CNI
    (Calico is installed in kind — `make kind-up`).
@@ -231,7 +229,7 @@ What would change before this went to real production:
 - Distributed tracing (Jaeger/Tempo) and a service mesh with mTLS.
 - A post-LLM PII scan (currently only pre-LLM input and tool results are scanned).
 - AlertManager + on-call paging; streaming (SSE) chat responses.
-- Automated CD to EKS (blocked here by rotating AWS Academy credentials).
+- Automated CD to EKS (not yet wired; ArgoCD Image Updater is not configured).
 - Multi-region / multi-AZ resilience; HPA validated under a real load test.
 - A managed WAF and per-route auth at the gateway.
 

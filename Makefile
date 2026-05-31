@@ -155,7 +155,7 @@ install-argocd: ## Install ArgoCD and the omnibank Application (demo cluster, we
 	@echo "ArgoCD installed. UI: kubectl -n argocd port-forward svc/argocd-server 8080:80"
 	@echo "Admin password: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d"
 
-# --- Cost discipline (AWS Academy $100 cap) -----------------------------------
+# --- Cost discipline (monthly budget cap — override BUDGET_CAP) ----------------
 CLUSTER    := omnibank-eks
 REGION     := us-east-1
 BUDGET_CAP := 100
@@ -187,7 +187,7 @@ destroy-all: ## Weekend: full terraform destroy (requires typing 'destroy' to co
 	if [ "$$ans" != "destroy" ]; then echo "Aborted — nothing destroyed."; exit 1; fi
 	cd $(TF_DIR) && terraform destroy -auto-approve
 
-budget-check: ## Print month-to-date AWS spend against the $100 cap
+budget-check: ## Print month-to-date AWS spend against the monthly budget cap
 	@start=$$(date -u +%Y-%m-01); \
 	end=$$(date -u +%Y-%m-%d); \
 	if [ "$$start" = "$$end" ]; then end=$$(date -u +%Y-%m-02); fi; \
@@ -198,5 +198,5 @@ budget-check: ## Print month-to-date AWS spend against the $100 cap
 	awk -v a="$$amount" -v cap="$(BUDGET_CAP)" 'BEGIN { \
 		pct = a / cap * 100; \
 		printf "Spent $$%.2f of $$%.2f cap (%.0f%%)\n", a, cap, pct; \
-		if (pct > 70) print "WARNING: over 70% of the AWS Academy budget cap!"; \
+		if (pct > 70) print "WARNING: over 70% of the monthly budget cap!"; \
 	}'

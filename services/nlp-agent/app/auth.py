@@ -15,6 +15,8 @@ from jose.exceptions import JWTError
 
 COGNITO_JWKS_URL = os.getenv("COGNITO_JWKS_URL", "")
 COGNITO_CLIENT_ID = os.getenv("COGNITO_CLIENT_ID", "")
+# Cognito's `iss` is the JWKS URL without the well-known suffix.
+_ISSUER = COGNITO_JWKS_URL.replace("/.well-known/jwks.json", "")
 _JWKS_TTL_SECONDS = 3600
 
 _jwks_cache: dict | None = None
@@ -37,7 +39,8 @@ def _get_jwks() -> dict:
 
 
 def validate_token(token: str) -> dict:
-    """Verify a Cognito ACCESS token and return its claims.
+    """Verify a Cognito ACCESS token (signature, expiry, token_use, client_id, issuer) and return
+    its claims.
 
     Access tokens carry `token_use: "access"` and `client_id` (no `aud`). The
     customer identity (`bank_customer_id`, `given_name`) is injected by the Cognito
@@ -55,4 +58,6 @@ def validate_token(token: str) -> dict:
         raise InvalidToken("not an access token")
     if claims.get("client_id") != COGNITO_CLIENT_ID:
         raise InvalidToken("token issued for a different client")
+    if _ISSUER and claims.get("iss") != _ISSUER:
+        raise InvalidToken("token issued by a different pool")
     return claims

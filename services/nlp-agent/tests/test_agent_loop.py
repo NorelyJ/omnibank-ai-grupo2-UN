@@ -88,9 +88,44 @@ async def test_tool_use_round_trip(monkeypatch):
     reply = await llm.chat("¿cuál es mi saldo?", customer_id="CUST-001", given_name="Juan")
 
     assert "5,432,100" in reply
-    # The second call must carry the tool_result back to the model.
     second_messages = fake.messages.calls[1]["messages"]
-    assert any(
-        isinstance(m["content"], list) and m["content"][0]["type"] == "tool_result"
+
+    # The assistant turn (with its tool_use block) must precede the tool_result.
+    assistant_turns = [m for m in second_messages if m["role"] == "assistant"]
+    assert assistant_turns, "assistant turn must be threaded into the second call"
+    assert any(b["type"] == "tool_use" for b in assistant_turns[-1]["content"])
+
+    # The tool_result must reference the originating tool_use_id (load-bearing for
+    # the real Bedrock API, which 400s on a mismatch).
+    tool_results = [
+        b
         for m in second_messages
-    )
+        if isinstance(m["content"], list)
+        for b in m["content"]
+        if isinstance(b, dict) and b.get("type") == "tool_result"
+    ]
+    assert tool_results, "tool_result must be carried back to the model"
+    assert tool_results[0]["tool_use_id"] == "tu_1"
+
+
+async def test_max_iterations_exhaustion_returns_fallback(monkeypatch):
+    _passthrough_pii(monkeypatch)
+
+    async def fake_get_accounts(customer_id):
+        return {"accounts": []}
+
+    monkeypatch.setattr(llm, "get_accounts", fake_get_accounts)
+
+    # The model asks for a tool every turn; the loop must give up after
+    # MAX_ITERATIONS calls and return the fallback message.
+    always_tool = [
+        _response([_tool_use_block(f"tu_{i}", "get_my_accounts", {})], "tool_use", _usage(5, 1))
+        for i in range(llm.MAX_ITERATIONS)
+    ]
+    fake = _FakeClient(always_tool)
+    monkeypatch.setattr(llm, "client", lambda: fake)
+
+    reply = await llm.chat("dame todo", customer_id="CUST-001", given_name="Juan")
+
+    assert reply == "Lo siento, no pude completar tu consulta en este momento."
+    assert len(fake.messages.calls) == llm.MAX_ITERATIONS

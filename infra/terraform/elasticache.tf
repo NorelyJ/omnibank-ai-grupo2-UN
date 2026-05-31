@@ -19,8 +19,8 @@ resource "aws_security_group" "redis" {
 }
 
 # No TLS / no AUTH for the MVP — documented production gap. The TLS-capable
-# resource (aws_elasticache_replication_group) is harder to provision under
-# AWS Academy's LabRole; revisit when moving to production.
+# resource (aws_elasticache_replication_group) is the production path; this
+# single-node cluster is a deliberate demo-scale simplification.
 resource "aws_elasticache_cluster" "redis" {
   cluster_id         = "omnibank-redis"
   engine             = "redis"

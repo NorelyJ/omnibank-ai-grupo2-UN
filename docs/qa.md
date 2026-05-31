@@ -38,13 +38,12 @@ no key to leak or rotate. Locally the agent uses the developer's AWS credential
 chain. Spend is bounded by the model choice (Haiku) and can be capped with AWS
 Budgets / Cost Explorer alerts.
 
-### "What happens if AWS Academy credentials expire mid-deploy?"
+### "What happens if your credentials expire mid-deploy?"
 
-AWS Academy sessions last 4 hours. `terraform apply` and `make deploy-eks` are
-human-triggered with fresh credentials precisely so an expiry never breaks an
-automated pipeline (CI deliberately does **not** deploy). If credentials expire
-mid-`apply`, Terraform state is consistent — re-run `apply` with new credentials
-and it continues from where it stopped.
+`terraform apply` and `make deploy-eks` are human-triggered with fresh
+credentials, and CI deliberately does **not** deploy. If credentials expire
+mid-`apply`, Terraform state stays consistent — re-run `apply` with new
+credentials and it continues from where it stopped.
 
 ### "Your NetworkPolicies — are they actually enforced?"
 

@@ -9,13 +9,14 @@ module "eks" {
   subnet_ids = module.vpc.private_subnets
 
   cluster_endpoint_public_access = true
+  enable_irsa                    = true
 
   eks_managed_node_groups = {
     general = {
-      instance_types = ["t3.micro"]
+      instance_types = ["t3.medium"]
       min_size       = 2
       max_size       = 6
-      desired_size   = 3
+      desired_size   = 2
     }
   }
 

@@ -107,23 +107,19 @@ install-kong: ## Install Kong API Gateway (DBless) in front of the agent
 	helm upgrade --install kong kong/kong -f $(HELM_DIR)/kong-values.yaml --wait --timeout 300s
 	@echo "Kong installed. NLB DNS: kubectl get svc kong-kong-proxy -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'"
 
-deploy-eks: ## Deploy the full stack to EKS (Secret from Secrets Manager + Helm)
-	@echo "→ syncing OpenAI key from AWS Secrets Manager into a Kubernetes Secret..."
-	@OPENAI_KEY=$$(aws secretsmanager get-secret-value --secret-id omnibank/llm-api-key --region us-east-1 \
-		--query SecretString --output text | jq -r .api_key); \
-	kubectl create secret generic omnibank-secrets \
-		--from-literal=OPENAI_API_KEY="$$OPENAI_KEY" \
-		--dry-run=client -o yaml | kubectl apply -f -
+deploy-eks: ## Deploy the full stack to EKS (keyless Bedrock via IRSA + Helm)
 	helm dependency update $(HELM_DIR)/omnibank
-	@echo "→ deploying umbrella chart with Terraform-derived endpoints..."
+	@echo "→ deploying umbrella chart with Terraform-derived endpoints + IRSA role..."
 	@cd $(TF_DIR) && \
 	REDIS=$$(terraform output -raw redis_endpoint) && \
 	JWKS=$$(terraform output -raw cognito_jwks_url) && \
 	CLIENT=$$(terraform output -raw cognito_client_id) && \
+	ROLE=$$(terraform output -raw nlp_agent_irsa_role_arn) && \
 	cd $(CURDIR) && \
 	helm upgrade --install omnibank $(HELM_DIR)/omnibank \
 		-f $(HELM_DIR)/omnibank/values-prod.yaml \
 		--set global.imageTag=$$(git rev-parse --short HEAD) \
+		--set nlp-agent.serviceAccount.roleArn=$$ROLE \
 		--set nlp-agent.config.REDIS_URL=redis://$$REDIS:6379 \
 		--set nlp-agent.config.COGNITO_JWKS_URL=$$JWKS \
 		--set nlp-agent.config.COGNITO_CLIENT_ID=$$CLIENT \

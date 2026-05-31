@@ -37,3 +37,8 @@ output "cognito_demo_users" {
     }
   }
 }
+
+output "nlp_agent_irsa_role_arn" {
+  description = "IAM role ARN the nlp-agent ServiceAccount assumes for Bedrock (IRSA)"
+  value       = module.nlp_agent_irsa.iam_role_arn
+}

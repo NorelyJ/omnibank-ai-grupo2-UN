@@ -91,6 +91,8 @@ async def test_tool_use_round_trip(monkeypatch):
     assert "5,432,100" in reply
     second = fake.calls[1]["messages"]
     assert any(m["role"] == "assistant" for m in second)
+    asst = next(m for m in second if m["role"] == "assistant")
+    assert any("toolUse" in b for b in asst["content"])
     results = [b for m in second for b in m["content"] if isinstance(b, dict) and "toolResult" in b]
     assert results and results[0]["toolResult"]["toolUseId"] == "tu_1"
 
@@ -112,3 +114,64 @@ async def test_max_iterations_exhaustion_returns_fallback(monkeypatch):
 
     assert reply == "Lo siento, no pude completar tu consulta en este momento."
     assert len(fake.calls) == llm.MAX_ITERATIONS
+
+
+def _empty_msg():
+    return {
+        "output": {"message": {"role": "assistant", "content": []}},
+        "stopReason": "content_filtered",
+        "usage": {"inputTokens": 3, "outputTokens": 0},
+    }
+
+
+async def test_empty_reply_returns_fallback(monkeypatch):
+    _passthrough_pii(monkeypatch)
+    fake = _FakeClient([_empty_msg()])
+    monkeypatch.setattr(llm, "client", lambda: fake)
+
+    reply = await llm.chat("hola", customer_id="CUST-001", given_name="Juan")
+
+    assert reply == "Lo siento, no pude procesar tu consulta en este momento."
+
+
+async def test_multiple_tool_uses_in_one_turn(monkeypatch):
+    _passthrough_pii(monkeypatch)
+
+    async def fake_get_accounts(customer_id):
+        return {"accounts": []}
+
+    async def fake_list_products():
+        return {"products": []}
+
+    monkeypatch.setattr(llm, "get_accounts", fake_get_accounts)
+    monkeypatch.setattr(llm, "list_products", fake_list_products)
+
+    multi = {
+        "output": {
+            "message": {
+                "role": "assistant",
+                "content": [
+                    {"toolUse": {"toolUseId": "tu_a", "name": "get_my_accounts", "input": {}}},
+                    {
+                        "toolUse": {
+                            "toolUseId": "tu_b",
+                            "name": "get_product_info",
+                            "input": {"product_type": "savings"},
+                        }
+                    },
+                ],
+            }
+        },
+        "stopReason": "tool_use",
+        "usage": {"inputTokens": 15, "outputTokens": 6},
+    }
+    fake = _FakeClient([multi, _text_msg("Listo.")])
+    monkeypatch.setattr(llm, "client", lambda: fake)
+
+    reply = await llm.chat("dame cuentas y productos", customer_id="CUST-001", given_name="Juan")
+
+    assert reply == "Listo."
+    second = fake.calls[1]["messages"]
+    results = [b for m in second for b in m["content"] if isinstance(b, dict) and "toolResult" in b]
+    ids = {r["toolResult"]["toolUseId"] for r in results}
+    assert ids == {"tu_a", "tu_b"}

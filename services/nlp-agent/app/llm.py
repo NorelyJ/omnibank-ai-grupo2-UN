@@ -210,7 +210,9 @@ async def _run_agent_loop(
 
         assistant = response["output"]["message"]
         if response.get("stopReason") != "tool_use":
-            return _text_from(assistant["content"])
+            return _text_from(assistant["content"]) or (
+                "Lo siento, no pude procesar tu consulta en este momento."
+            )
 
         # Append the assistant turn verbatim, then answer each toolUse with a
         # toolResult in a single user message.

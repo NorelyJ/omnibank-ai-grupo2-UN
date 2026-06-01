@@ -15,7 +15,7 @@ import boto3
 import httpx
 
 from app import metrics
-from app.banking_client import get_accounts, get_transactions, list_products
+from app.banking_client import get_accounts, get_transactions, list_faq, list_products
 from app.history import append as history_append
 from app.history import load as history_load
 from app.pii_client import PiiFilterUnavailable
@@ -96,6 +96,25 @@ TOOLS = {
                 },
             }
         },
+        {
+            "toolSpec": {
+                "name": "get_faq",
+                "description": "Información institucional de OmniBank: tipos de cuenta, "
+                "tarifas, certificados y procesos.",
+                "inputSchema": {
+                    "json": {
+                        "type": "object",
+                        "properties": {
+                            "topic": {
+                                "type": "string",
+                                "enum": ["account_types", "fees", "certificates", "processes"],
+                            }
+                        },
+                        "required": ["topic"],
+                    }
+                },
+            }
+        },
     ]
 }
 
@@ -110,8 +129,11 @@ def system_prompt(given_name: str) -> str:
         "- Usa el nombre del cliente para personalizar el saludo inicial.\n"
         "- Para consultas de cuentas, transacciones o productos, USA las herramientas "
         "disponibles. NUNCA inventes datos.\n"
-        "- Para preguntas generales (horarios, ubicaciones, etc.) responde con tu "
-        "conocimiento, sin herramientas.\n"
+        "- Para tipos de cuenta, tarifas, certificados o procesos, USA la herramienta "
+        "get_faq.\n"
+        "- NUNCA inventes información del banco. Si algo no está disponible en las "
+        "herramientas (por ejemplo horarios u otros temas), indícalo y sugiere comunicarse "
+        "al *777 o acercarse a una sucursal.\n"
         "- NO realizas transferencias ni pagos. Si te piden eso, indica que deben usar la "
         "app móvil o llamar al *777.\n"
         "- NO repitas números de cédula, cuentas completas, o tarjetas.\n"
@@ -135,6 +157,11 @@ async def _invoke_tool(name: str, args: dict, customer_id: str) -> str:
             product_type = args.get("product_type")
             info = next((p for p in catalog["products"] if p["product_type"] == product_type), None)
             result = json.dumps(info or {"error": f"producto desconocido: {product_type}"})
+        elif name == "get_faq":
+            catalog = await list_faq()
+            topic = args.get("topic")
+            info = next((e for e in catalog["faq"] if e["topic"] == topic), None)
+            result = json.dumps(info or {"error": f"tema desconocido: {topic}"})
         else:
             result = json.dumps({"error": f"herramienta desconocida: {name}"})
             status = "error"

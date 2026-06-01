@@ -54,3 +54,10 @@ async def list_products() -> dict:
         response = await client.get(f"{MOCK_BANKING_URL}/v1/products")
         response.raise_for_status()
         return response.json()
+
+
+async def list_faq() -> dict:
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        response = await client.get(f"{MOCK_BANKING_URL}/v1/faq")
+        response.raise_for_status()
+        return response.json()

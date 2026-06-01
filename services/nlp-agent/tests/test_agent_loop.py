@@ -175,3 +175,37 @@ async def test_multiple_tool_uses_in_one_turn(monkeypatch):
     results = [b for m in second for b in m["content"] if isinstance(b, dict) and "toolResult" in b]
     ids = {r["toolResult"]["toolUseId"] for r in results}
     assert ids == {"tu_a", "tu_b"}
+
+
+async def test_faq_tool_round_trip(monkeypatch):
+    _passthrough_pii(monkeypatch)
+
+    async def fake_list_faq():
+        return {
+            "faq": [
+                {
+                    "topic": "certificates",
+                    "title": "Certificados",
+                    "content": "Solicitalo en la app o al *777.",
+                }
+            ]
+        }
+
+    monkeypatch.setattr(llm, "list_faq", fake_list_faq)
+
+    fake = _FakeClient(
+        [
+            _tool_msg("tu_f", "get_faq", {"topic": "certificates"}),
+            _text_msg("Puedes solicitar tu certificado en la app o al *777."),
+        ]
+    )
+    monkeypatch.setattr(llm, "client", lambda: fake)
+
+    reply = await llm.chat(
+        "¿cómo solicito un certificado?", customer_id="CUST-001", given_name="Juan"
+    )
+
+    assert "*777" in reply
+    second = fake.calls[1]["messages"]
+    results = [b for m in second for b in m["content"] if isinstance(b, dict) and "toolResult" in b]
+    assert results and results[0]["toolResult"]["toolUseId"] == "tu_f"

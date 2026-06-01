@@ -1,6 +1,7 @@
-# ArgoCD Application — reconciles the OmniBank umbrella chart from main.
-# Applied by `make install-argocd`. Image-tag changes are made by editing
-# values-prod.yaml in git; auto-sync picks them up (no Image Updater).
+# ArgoCD Application — reconciles the OmniBank umbrella chart from main into the
+# `omnibank` namespace. Applied by `make install-argocd`. Env-specific runtime
+# values (IRSA role, ElastiCache, Cognito) are passed as helm parameters so the
+# GitOps-managed copy is fully functional (they are non-secret IDs/endpoints).
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -15,6 +16,15 @@ spec:
     helm:
       valueFiles:
         - values-prod.yaml
+      parameters:
+        - name: nlp-agent.serviceAccount.roleArn
+          value: arn:aws:iam::381894834741:role/omnibank-nlp-agent-bedrock
+        - name: nlp-agent.config.REDIS_URL
+          value: redis://omnibank-redis.uig552.0001.use1.cache.amazonaws.com:6379
+        - name: nlp-agent.config.COGNITO_JWKS_URL
+          value: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_KMgUoL4kd/.well-known/jwks.json
+        - name: nlp-agent.config.COGNITO_CLIENT_ID
+          value: "45ftj1cr98u56r60d7mijleeji"
   destination:
     server: https://kubernetes.default.svc
     namespace: omnibank

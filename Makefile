@@ -100,7 +100,7 @@ install-kps: ## Install kube-prometheus-stack + the OmniBank Grafana dashboard
 
 install-kong: ## Install Kong API Gateway (DBless) in front of the agent
 	kubectl create configmap kong-declarative \
-		--from-file=kong.yaml=infra/kong/kong-declarative.yaml \
+		--from-file=kong.yml=infra/kong/kong-declarative.yaml \
 		--dry-run=client -o yaml | kubectl apply -f -
 	helm repo add kong https://charts.konghq.com
 	helm repo update kong

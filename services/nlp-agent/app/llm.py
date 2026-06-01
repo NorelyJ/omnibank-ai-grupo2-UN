@@ -1,17 +1,18 @@
-"""Bedrock (Claude) client + agent loop.
+"""Bedrock Converse client + agent loop.
 
 Every user message is scrubbed by the pii-filter before it reaches the LLM, and
 every tool result is scrubbed before it is added to the LLM context. The loop is
 bounded to MAX_ITERATIONS (defense against runaway tool-call cycles).
 """
 
+import asyncio
 import datetime as dt
 import json
 import logging
 import os
 
+import boto3
 import httpx
-from anthropic import AsyncAnthropicBedrock
 
 from app import metrics
 from app.banking_client import get_accounts, get_transactions, list_products
@@ -20,7 +21,7 @@ from app.history import load as history_load
 from app.pii_client import PiiFilterUnavailable
 from app.pii_client import redact as pii_redact
 
-MODEL = os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0")
+MODEL = os.getenv("BEDROCK_MODEL_ID", "us.meta.llama4-maverick-17b-instruct-v1:0")
 MAX_TOKENS = 1024
 MAX_ITERATIONS = 3
 
@@ -32,58 +33,71 @@ FILTER_UNAVAILABLE_MSG = (
 
 logger = logging.getLogger("nlp-agent.llm")
 
-_client: AsyncAnthropicBedrock | None = None
+_client = None
 
 
-def client() -> AsyncAnthropicBedrock:
+def client():
     global _client
     if _client is None:
         # No API key: SigV4 via the botocore credential chain (IRSA in EKS,
-        # env/profile locally).
-        _client = AsyncAnthropicBedrock(aws_region=os.getenv("AWS_REGION", "us-east-1"))
+        # env/profile locally). Converse is provider-agnostic.
+        _client = boto3.client("bedrock-runtime", region_name=os.getenv("AWS_REGION", "us-east-1"))
     return _client
 
 
-TOOLS = [
-    {
-        "name": "get_my_accounts",
-        "description": "Obtiene las cuentas del cliente autenticado con sus saldos actuales.",
-        "input_schema": {"type": "object", "properties": {}, "required": []},
-    },
-    {
-        "name": "list_my_transactions",
-        "description": "Lista las transacciones recientes del cliente, opcionalmente "
-        "filtradas por cuenta.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "account_id": {
-                    "type": "string",
-                    "description": "ID de cuenta a filtrar, p. ej. AHO-001.",
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "Cuántas transacciones traer (1-20). Por defecto 5.",
-                },
-            },
-            "required": [],
+TOOLS = {
+    "tools": [
+        {
+            "toolSpec": {
+                "name": "get_my_accounts",
+                "description": "Obtiene las cuentas del cliente autenticado con sus saldos "
+                "actuales.",
+                "inputSchema": {"json": {"type": "object", "properties": {}, "required": []}},
+            }
         },
-    },
-    {
-        "name": "get_product_info",
-        "description": "Obtiene información de un producto bancario de OmniBank.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "product_type": {
-                    "type": "string",
-                    "enum": ["credit_card", "savings", "mortgage", "loan"],
-                }
-            },
-            "required": ["product_type"],
+        {
+            "toolSpec": {
+                "name": "list_my_transactions",
+                "description": "Lista las transacciones recientes del cliente, opcionalmente "
+                "filtradas por cuenta.",
+                "inputSchema": {
+                    "json": {
+                        "type": "object",
+                        "properties": {
+                            "account_id": {
+                                "type": "string",
+                                "description": "ID de cuenta a filtrar, p. ej. AHO-001.",
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "description": "Cuántas transacciones traer (1-20). Por defecto 5.",
+                            },
+                        },
+                        "required": [],
+                    }
+                },
+            }
         },
-    },
-]
+        {
+            "toolSpec": {
+                "name": "get_product_info",
+                "description": "Obtiene información de un producto bancario de OmniBank.",
+                "inputSchema": {
+                    "json": {
+                        "type": "object",
+                        "properties": {
+                            "product_type": {
+                                "type": "string",
+                                "enum": ["credit_card", "savings", "mortgage", "loan"],
+                            }
+                        },
+                        "required": ["product_type"],
+                    }
+                },
+            }
+        },
+    ]
+}
 
 
 def system_prompt(given_name: str) -> str:
@@ -166,60 +180,51 @@ async def chat(user_message: str, customer_id: str, given_name: str) -> str:
 
 
 def _text_from(content) -> str:
-    """Join the text blocks of an Anthropic response into one string."""
-    return "".join(
-        block.text for block in content if getattr(block, "type", None) == "text"
-    ).strip()
+    """Join the text blocks of a Converse response message into one string."""
+    return "".join(b["text"] for b in content if "text" in b).strip()
 
 
 async def _run_agent_loop(
     user_message: str, history: list[dict], customer_id: str, given_name: str
 ) -> str:
-    messages: list[dict] = [{"role": h["role"], "content": h["content"]} for h in history]
-    messages.append({"role": "user", "content": user_message})
+    messages: list[dict] = [
+        {"role": h["role"], "content": [{"text": h["content"]}]} for h in history
+    ]
+    messages.append({"role": "user", "content": [{"text": user_message}]})
 
     for _ in range(MAX_ITERATIONS):
         try:
-            response = await client().messages.create(
-                model=MODEL,
-                max_tokens=MAX_TOKENS,
-                system=system_prompt(given_name),
+            response = await asyncio.to_thread(
+                client().converse,
+                modelId=MODEL,
+                system=[{"text": system_prompt(given_name)}],
                 messages=messages,
-                tools=TOOLS,
+                toolConfig=TOOLS,
+                inferenceConfig={"maxTokens": MAX_TOKENS},
             )
         except Exception:
             metrics.llm_calls_total.labels(model=MODEL, status="error").inc()
             raise
         metrics.llm_calls_total.labels(model=MODEL, status="success").inc()
-        metrics.record_llm_usage(response.usage)
+        metrics.record_llm_usage(response.get("usage"))
 
-        if response.stop_reason != "tool_use":
-            return _text_from(response.content)
+        assistant = response["output"]["message"]
+        if response.get("stopReason") != "tool_use":
+            return _text_from(assistant["content"])
 
-        # Record the assistant turn (text + tool_use blocks) as dicts, then answer
-        # each tool_use with a tool_result in a single user message.
-        assistant_content = []
-        for block in response.content:
-            block_type = getattr(block, "type", None)
-            if block_type == "text":
-                assistant_content.append({"type": "text", "text": block.text})
-            elif block_type == "tool_use":
-                assistant_content.append(
-                    {
-                        "type": "tool_use",
-                        "id": block.id,
-                        "name": block.name,
-                        "input": dict(block.input or {}),
-                    }
-                )
-        messages.append({"role": "assistant", "content": assistant_content})
+        # Append the assistant turn verbatim, then answer each toolUse with a
+        # toolResult in a single user message.
+        messages.append(assistant)
         tool_results: list[dict] = []
-        for block in response.content:
-            if getattr(block, "type", None) != "tool_use":
+        for block in assistant["content"]:
+            tu = block.get("toolUse")
+            if not tu:
                 continue
-            raw = await _invoke_tool(block.name, dict(block.input or {}), customer_id)
+            raw = await _invoke_tool(tu["name"], dict(tu.get("input") or {}), customer_id)
             safe = await _redact_tool_result(raw, given_name)
-            tool_results.append({"type": "tool_result", "tool_use_id": block.id, "content": safe})
+            tool_results.append(
+                {"toolResult": {"toolUseId": tu["toolUseId"], "content": [{"text": safe}]}}
+            )
         messages.append({"role": "user", "content": tool_results})
 
     return "Lo siento, no pude completar tu consulta en este momento."

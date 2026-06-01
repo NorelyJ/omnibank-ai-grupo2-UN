@@ -86,3 +86,10 @@ def test_products_catalog_lists_all_four_types():
     body = client.get("/v1/products").json()
     types = {p["product_type"] for p in body["products"]}
     assert types == {"credit_card", "savings", "mortgage", "loan"}
+
+
+def test_faq_returns_all_topics():
+    response = client.get("/v1/faq")
+    assert response.status_code == 200
+    topics = {entry["topic"] for entry in response.json()["faq"]}
+    assert topics == {"account_types", "fees", "certificates", "processes"}

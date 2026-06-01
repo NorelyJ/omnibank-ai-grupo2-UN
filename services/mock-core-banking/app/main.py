@@ -17,6 +17,7 @@ from app import metrics
 DATA_DIR = Path(__file__).parent.parent / "data"
 CUSTOMERS: dict = json.loads((DATA_DIR / "customers.json").read_text(encoding="utf-8"))
 PRODUCTS: dict = json.loads((DATA_DIR / "products.json").read_text(encoding="utf-8"))
+FAQ: dict = json.loads((DATA_DIR / "faq.json").read_text(encoding="utf-8"))
 
 GIT_SHA = os.getenv("GIT_SHA", "dev")
 DEFAULT_TXN_LIMIT = 5
@@ -93,3 +94,8 @@ def get_my_transactions(
 @app.get("/v1/products")
 def get_products() -> dict:
     return {"products": list(PRODUCTS.values())}
+
+
+@app.get("/v1/faq")
+def get_faq() -> dict:
+    return {"faq": list(FAQ.values())}

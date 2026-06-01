@@ -1,0 +1,22 @@
+{
+  "account_types": {
+    "topic": "account_types",
+    "title": "Tipos de cuenta",
+    "content": "OmniBank ofrece dos cuentas personales. Cuenta de Ahorros 'Ahorro Plus': genera rendimientos (8% E.A.), sin cuota de manejo, con tarjeta débito y transferencias gratis; ideal para ahorrar. Cuenta Corriente: para el manejo diario y pagos, permite sobregiro autorizado. Ambas se abren con tu documento de identidad; la de ahorros se abre en minutos desde la app."
+  },
+  "fees": {
+    "topic": "fees",
+    "title": "Tarifas y comisiones",
+    "content": "Cuenta de Ahorros Ahorro Plus: sin cuota de manejo. Cuenta Corriente: cuota de manejo mensual de 18,000 COP. Retiros en cajeros OmniBank: gratis; en cajeros de otras redes: 5,500 COP por retiro. Transferencias interbancarias (ACH): 3,500 COP. Aplica el Gravamen a los Movimientos Financieros (4x1000) segun la ley. Las tarifas de tarjetas y creditos se consultan con get_product_info."
+  },
+  "certificates": {
+    "topic": "certificates",
+    "title": "Certificados bancarios",
+    "content": "Puedes solicitar la certificacion bancaria (confirma la titularidad y el estado de tus cuentas) y el certificado de saldo. Se solicitan desde la app movil (seccion Certificados), en la linea *777 o en cualquier sucursal. La version digital se genera al instante y es gratuita; la version fisica en sucursal cuesta 8,000 COP. El certificado anual para efectos tributarios esta disponible en febrero."
+  },
+  "processes": {
+    "topic": "processes",
+    "title": "Procesos frecuentes",
+    "content": "Abrir cuenta: desde la app con tu documento, o en una sucursal. Bloquear una tarjeta perdida o robada: de inmediato en la app o llamando al *777 (24/7). Actualizar tus datos (direccion, telefono, correo): en la app o en sucursal. Cerrar una cuenta: en sucursal y con saldo en cero. Radicar una PQR (peticion, queja o reclamo): por la app, el *777 o www.omnibank.demo/pqr; se responde en maximo 15 dias habiles."
+  }
+}

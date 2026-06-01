@@ -24,7 +24,7 @@ resources:
 config:
   ENV: production
   AWS_REGION: us-east-1
-  BEDROCK_MODEL_ID: us.anthropic.claude-haiku-4-5-20251001-v1:0
+  BEDROCK_MODEL_ID: us.meta.llama4-maverick-17b-instruct-v1:0
   MOCK_BANKING_URL: http://mock-core-banking:8001
   PII_FILTER_GRPC: pii-filter:50051
   REDIS_URL: redis://redis:6379

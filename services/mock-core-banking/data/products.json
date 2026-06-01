@@ -11,7 +11,7 @@
     "product_type": "savings",
     "name": "Cuenta Ahorro Plus",
     "annual_fee_cop": 0,
-    "interest_rate_ea_pct": 8.0,
+    "interest_rate_ea_pct": 9.0,
     "summary": "High-yield savings account, no maintenance fee, free debit card and transfers.",
     "requirements": "Any customer with a valid ID can open it in minutes."
   },

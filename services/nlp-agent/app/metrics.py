@@ -41,7 +41,7 @@ redis_history_size = Histogram(
     buckets=[0, 2, 4, 6, 8, 10, 15, 20],
 )
 
-# Claude 3.5 Haiku on Bedrock list price (USD per token), us-east-1. Estimate only.
+# Claude Haiku 4.5 on Bedrock list price (USD per token), us-east-1. Estimate only.
 _COST_PER_INPUT_TOKEN = 0.80 / 1_000_000
 _COST_PER_OUTPUT_TOKEN = 4.00 / 1_000_000
 

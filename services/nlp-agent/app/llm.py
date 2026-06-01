@@ -20,7 +20,7 @@ from app.history import load as history_load
 from app.pii_client import PiiFilterUnavailable
 from app.pii_client import redact as pii_redact
 
-MODEL = os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-3-5-haiku-20241022-v1:0")
+MODEL = os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0")
 MAX_TOKENS = 1024
 MAX_ITERATIONS = 3
 

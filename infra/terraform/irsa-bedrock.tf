@@ -35,8 +35,8 @@ resource "aws_iam_role_policy" "nlp_agent_bedrock" {
       # Cross-region inference profile + the underlying foundation model in any
       # region the profile may route to.
       Resource = [
-        "arn:aws:bedrock:${var.aws_region}:${data.aws_caller_identity.current.account_id}:inference-profile/us.anthropic.claude-3-5-haiku-*",
-        "arn:aws:bedrock:*::foundation-model/anthropic.claude-3-5-haiku-*",
+        "arn:aws:bedrock:${var.aws_region}:${data.aws_caller_identity.current.account_id}:inference-profile/us.anthropic.claude-haiku-4-5-*",
+        "arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-*",
       ]
     }]
   })

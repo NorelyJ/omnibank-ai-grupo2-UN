@@ -25,7 +25,7 @@ flowchart TB
         end
     end
 
-    bedrock[AWS Bedrock<br/>Claude 3.5 Haiku]
+    bedrock[AWS Bedrock Converse<br/>Llama 4 Maverick default]
 
     user -->|"HTTPS POST /v1/chat + Bearer JWT"| kong
     kong --> agent
@@ -48,8 +48,10 @@ flowchart TB
    phone, email, account, IP and spaCy-detected names/locations/orgs are replaced
    with `[TIPO]` placeholders; a card number **blocks** the whole request. If the
    filter is unreachable, the agent fails safe — no LLM call.
-4. **Reason + tools.** The redacted message goes to AWS Bedrock (Claude 3.5 Haiku) with three
-   typed tools (Anthropic tool use). The tool-call loop is bounded to 3 iterations.
+4. **Reason + tools.** The redacted message goes to AWS Bedrock via the Converse API
+   (default Llama 4 Maverick, `us.meta.llama4-maverick-17b-instruct-v1:0`; model-swappable
+   via `BEDROCK_MODEL_ID`) with three typed banking tools. The tool-call loop is bounded
+   to 3 iterations.
 5. **Scrub tool results.** Every mock-core-banking response is scrubbed by
    pii-filter (`source="tool_result"`) before re-entering the LLM context.
 6. **Persist.** The redacted user message and the reply are appended to Redis

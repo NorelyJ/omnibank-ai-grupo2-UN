@@ -23,14 +23,14 @@ flowchart LR
     agent -->|gRPC Redact| pii[pii-filter<br/>regex + spaCy]
     agent -->|HTTP| bank[mock-core-banking]
     agent -->|conversation history| redis[(Redis / ElastiCache)]
-    agent -->|redacted text only| bedrock[AWS Bedrock<br/>Claude 3.5 Haiku]
+    agent -->|redacted text only| bedrock[AWS Bedrock Converse<br/>Llama 4 Maverick default]
 ```
 
 **Request flow:** client → Kong (DBless, behind an AWS NLB) → nlp-agent. The agent
 validates the Cognito access token, scrubs the user message through pii-filter (gRPC),
-looks up real data from mock-core-banking (HTTP) via Bedrock (Claude) tool use, scrubs
+looks up real data from mock-core-banking (HTTP) via Bedrock tool use, scrubs
 each tool result, persists redacted history in Redis, and returns a Spanish reply.
-**Only redacted text ever reaches AWS Bedrock (Claude Haiku).**
+**Only redacted text ever reaches AWS Bedrock (Converse API — default Llama 4 Maverick).**
 
 Ten deep modules: PII detector, redaction policy engine, conversation orchestrator,
 tool dispatcher, LLM client adapter, Redis history client, PII-filter gRPC client,
@@ -40,7 +40,7 @@ customer repository, JWT validator, metrics emitter.
 
 ```
 services/
-  nlp-agent/          FastAPI agent — Bedrock (Claude) tool use, in-agent JWT, /v1/chat
+  nlp-agent/          FastAPI agent — Bedrock Converse tool use, in-agent JWT, /v1/chat
   pii-filter/         gRPC PII redactor (regex + spaCy) + FastAPI sidecar
   mock-core-banking/  FastAPI mock bank data from baked-in JSON
 infra/
@@ -57,9 +57,9 @@ docker-compose.yml    local dev stack       Makefile  all common operations
 
 ## Run locally (docker-compose)
 
-> **AWS credentials required.** The agent now calls Claude Haiku on **AWS Bedrock**
-> (keyless — no API key). Local dev therefore needs AWS credentials with Bedrock
-> model access. Export them before `make dev`:
+> **AWS credentials required.** The agent calls **AWS Bedrock via the Converse API**
+> (default model: Llama 4 Maverick; keyless — no API key). Local dev therefore needs
+> AWS credentials with Bedrock model access. Export them before `make dev`:
 >
 > ```bash
 > aws sso login                                   # or: aws configure
@@ -194,9 +194,10 @@ validation can be slotted in without code changes.
 
 Several constraints below were forced by the original AWS Academy environment; on this standard account they are now lifted (noted inline). The rest are deliberate design choices.
 
-1. **AWS Bedrock (Claude 3.5 Haiku) — LIFTED.** The agent calls Bedrock keyless via
-   IRSA (no API key stored). This runs on a standard AWS account with full Bedrock
-   access.
+1. **AWS Bedrock (Converse API, default Llama 4 Maverick) — LIFTED.** The agent calls
+   Bedrock keyless via IRSA (no API key stored). Any authorized Bedrock model is
+   selectable via `BEDROCK_MODEL_ID` (e.g. Amazon Nova `us.amazon.nova-lite-v1:0`).
+   This runs on a standard AWS account with full Bedrock access.
 2. **ECR → GitHub Container Registry.** The IAM OIDC provider for GitHub Actions
    is not provisioned, so ECR stays declared in Terraform for reference only. CI
    publishes to `ghcr.io` with the built-in `GITHUB_TOKEN`.

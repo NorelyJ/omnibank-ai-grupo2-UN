@@ -41,17 +41,17 @@ redis_history_size = Histogram(
     buckets=[0, 2, 4, 6, 8, 10, 15, 20],
 )
 
-# Claude Haiku 4.5 on Bedrock list price (USD per token), us-east-1. Estimate only.
-_COST_PER_INPUT_TOKEN = 0.80 / 1_000_000
-_COST_PER_OUTPUT_TOKEN = 4.00 / 1_000_000
+# Llama 4 Maverick on Bedrock list price (USD per token), us-east-1. Estimate only.
+_COST_PER_INPUT_TOKEN = 0.24 / 1_000_000
+_COST_PER_OUTPUT_TOKEN = 0.97 / 1_000_000
 
 
 def record_llm_usage(usage) -> None:
-    """Record token counts and the estimated USD cost from an Anthropic `usage` object."""
-    if usage is None:
+    """Record token counts and the estimated USD cost from a Bedrock Converse `usage` dict."""
+    if not usage:
         return
-    input_tokens = getattr(usage, "input_tokens", 0) or 0
-    output_tokens = getattr(usage, "output_tokens", 0) or 0
+    input_tokens = usage.get("inputTokens", 0) or 0
+    output_tokens = usage.get("outputTokens", 0) or 0
     llm_tokens_total.labels(direction="input").inc(input_tokens)
     llm_tokens_total.labels(direction="output").inc(output_tokens)
     llm_cost_usd_total.inc(

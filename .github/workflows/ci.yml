@@ -89,3 +89,34 @@ jobs:
           build-args: GIT_SHA=${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  bump-image-tag:
+    # Closes the GitOps loop: write the freshly-built image tag into the chart so
+    # ArgoCD (the deploy source of truth) sees a manifest diff and auto-syncs.
+    # Main only — PRs build images but never touch the deployed tag.
+    needs: build-and-push
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      # Serialize bumps so two near-simultaneous pushes don't race on the same line.
+      group: bump-image-tag
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pin global.imageTag to this commit's short SHA
+        run: |
+          SHA="${GITHUB_SHA::7}"   # matches docker/metadata-action type=sha,format=short
+          sed -i -E "s/^(  imageTag:).*/\1 ${SHA}/" infra/helm/omnibank/values-prod.yaml
+          if git diff --quiet infra/helm/omnibank/values-prod.yaml; then
+            echo "imageTag already ${SHA} — nothing to commit."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add infra/helm/omnibank/values-prod.yaml
+          git commit -m "ci: pin omnibank imageTag to ${SHA} [skip ci]"
+          # Rebase in case main advanced while the build ran, then push back.
+          git pull --rebase origin main
+          git push origin HEAD:main

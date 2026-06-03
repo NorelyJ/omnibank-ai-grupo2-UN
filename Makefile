@@ -107,8 +107,10 @@ install-kong: ## Install Kong API Gateway (DBless) in front of the agent
 	helm upgrade --install kong kong/kong -f $(HELM_DIR)/kong-values.yaml --wait --timeout 300s
 	@echo "Kong installed. NLB DNS: kubectl get svc kong-kong-proxy -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'"
 
-deploy-eks: ## Deploy the full stack to EKS (keyless Bedrock via IRSA + Helm)
+deploy-eks: ## Bootstrap/break-glass deploy to EKS (ArgoCD is the steady-state source of truth)
 	helm dependency update $(HELM_DIR)/omnibank
+	@echo "⚠  ArgoCD owns steady-state deploys (selfHeal will revert manual changes)."
+	@echo "   Use this only for the first install or break-glass."
 	@echo "→ deploying umbrella chart with Terraform-derived endpoints + IRSA role..."
 	@cd $(TF_DIR) && \
 	REDIS=$$(terraform output -raw redis_endpoint) && \

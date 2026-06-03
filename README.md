@@ -148,12 +148,28 @@ curl -X POST https://$NLB/v1/chat -H "Authorization: Bearer $TOKEN" \
 
 Asking without a token, or with a token signed by another key, returns `401`.
 
-## Continuous integration
+## Continuous integration & delivery
 
 `.github/workflows/ci.yml` runs on every pull request and on pushes to `main`:
 **lint** (`ruff`), **test** (`pytest` per service), **build-and-push** (multi-stage
 Docker images to `ghcr.io/<owner>/omnibank-<service>`, git-SHA tagged, `:latest` on
 `main`; PRs build but do not push).
+
+On `main`, a final **`bump-image-tag`** job closes the GitOps loop: it rewrites
+`global.imageTag` in `infra/helm/omnibank/values-prod.yaml` to the freshly-built short
+SHA and commits it back (`[skip ci]`). **ArgoCD is the deploy source of truth** — it
+watches `main`, sees the manifest diff, and auto-syncs the new image into the `omnibank`
+namespace (`syncPolicy.automated` + `selfHeal`). So a push to `main` is fully
+push-button: **commit → CI builds & tests → tag write-back → ArgoCD deploys.**
+
+`make deploy-eks` (manual `helm upgrade --set imageTag=$SHA`) is kept only for the first
+bootstrap or break-glass; routine use fights `selfHeal`, which reverts to git state.
+
+> **Repo settings this needs:** the write-back pushes to `main` with the default
+> `GITHUB_TOKEN` (job grants `contents: write`). If `main` is a protected branch
+> requiring PRs/reviews, allow the `github-actions[bot]` to bypass it, or the push is
+> rejected. Pushes made with `GITHUB_TOKEN` don't retrigger workflows, so there's no
+> CI loop (the `[skip ci]` marker is belt-and-suspenders).
 
 ## Observability
 

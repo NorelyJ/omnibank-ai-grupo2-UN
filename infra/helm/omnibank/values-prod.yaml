@@ -1,6 +1,9 @@
-# EKS. Images come from ghcr.io; the tag is set at deploy time:
-#   helm upgrade --install omnibank ./infra/helm/omnibank -f values-prod.yaml \
-#     --set global.imageTag=$(git rev-parse --short HEAD)
+# EKS. Images come from ghcr.io.
+# global.imageTag is MANAGED BY CI: the `bump-image-tag` job in .github/workflows/ci.yml
+# rewrites it to the freshly-built short SHA on every push to main, and ArgoCD (the deploy
+# source of truth) auto-syncs the diff. Don't hand-edit it — it will be overwritten.
+# `latest` is just the bootstrap value before the first CI run.
+# Break-glass manual deploy still works: make deploy-eks (--set global.imageTag=$SHA).
 global:
   imageTag: latest
 

@@ -5,7 +5,7 @@
 # `latest` is just the bootstrap value before the first CI run.
 # Break-glass manual deploy still works: make deploy-eks (--set global.imageTag=$SHA).
 global:
-  imageTag: latest
+  imageTag: e699369
 
 nlp-agent:
   image:
